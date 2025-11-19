@@ -52,27 +52,26 @@ class Triangulator:
             points_2d: List of (u, v) coordinates, one per camera [(u1,v1), (u2,v2), ...]
         
         Returns:
-            point_3d: (X, Y, Z) 3D point in world coordinates
+            point_3d: (X, Y, Z) 3D point in world coordinates or None if invalid
         """
         assert len(points_2d) >= 2, "Need at least 2 views for triangulation"
         assert len(points_2d) == self.num_cameras, f"Expected {self.num_cameras} points, got {len(points_2d)}"
         
-        # Build the A matrix (2N x 4) where N = number of views
         A = []
         for i, (u, v) in enumerate(points_2d):
             P = self.P_matrices[i]
-            # Two equations per view
-            A.append(u * P[2] - P[0])  # u(P[2]·X) - P[0]·X = 0
-            A.append(v * P[2] - P[1])  # v(P[2]·X) - P[1]·X = 0
+            A.append(u * P[2] - P[0])
+            A.append(v * P[2] - P[1])
         
         A = np.array(A)
         
-        # Solve A·X = 0 using SVD: X is right singular vector for smallest singular value
         _, _, Vt = np.linalg.svd(A)
-        X_homogeneous = Vt[-1]  # Last row of V^T (last column of V)
+        X_homogeneous = Vt[-1]
         
-        # Convert from homogeneous to 3D coordinates
         X = X_homogeneous[:3] / X_homogeneous[3]
+        
+        if np.any(np.isnan(X)) or np.any(np.isinf(X)):
+            return None
         
         return X
     
@@ -101,23 +100,44 @@ class Triangulator:
         
         return points_3d.flatten()
 
+    def is_in_front_of_camera(self, point_3d, cam_idx):
+        """
+        Check if 3D point has positive depth (in front of camera)
+        
+        Args:
+            point_3d: (X, Y, Z) 3D point
+            cam_idx: Camera index
+        
+        Returns:
+            True if point is in front of camera
+        """
+        P = self.P_matrices[cam_idx]
+        X_hom = np.append(point_3d, 1)
+        depth = P[2] @ X_hom
+        return depth > 0
+    
     def triangulate_points(self, cam_idx1, cam_idx2, points1, points2):
         """
-        Triangulate a batch of points from two views.
+        Triangulate a batch of points from two views with depth validation.
         """
         P1 = self.P_matrices[cam_idx1]
         P2 = self.P_matrices[cam_idx2]
 
-        # OpenCV's triangulatePoints expects 2xN arrays of points.
         points1 = np.array(points1, dtype=np.float32).T
         points2 = np.array(points2, dtype=np.float32).T
 
         points_4d_hom = cv2.triangulatePoints(P1, P2, points1, points2)
         
-        # Convert from homogeneous to 3D coordinates
         points_3d = points_4d_hom[:3] / points_4d_hom[3]
+        points_3d = points_3d.T
         
-        return points_3d.T # Return as Nx3 array
+        valid_points = []
+        for pt in points_3d:
+            if self.is_in_front_of_camera(pt, cam_idx1) and self.is_in_front_of_camera(pt, cam_idx2):
+                if not np.any(np.isnan(pt)) and not np.any(np.isinf(pt)):
+                    valid_points.append(pt)
+        
+        return np.array(valid_points)
     
     def triangulate_batch(self, points_2d_batch, method='dlt'):
         """
@@ -144,12 +164,15 @@ class Triangulator:
                 else:
                     raise ValueError(f"Unknown method: {method}")
                 
-                points_3d.append(pt_3d)
+                if pt_3d is None:
+                    continue
+                
+                if all(self.is_in_front_of_camera(pt_3d, i) for i in range(self.num_cameras)):
+                    points_3d.append(pt_3d)
             except Exception as e:
-                print(f"Warning: Triangulation failed for point: {e}")
                 continue
         
-        return np.array(points_3d)
+        return np.array(points_3d) if points_3d else np.array([])
     
     def compute_reprojection_error(self, point_3d, points_2d):
         """

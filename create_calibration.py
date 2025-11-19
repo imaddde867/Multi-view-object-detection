@@ -2,7 +2,7 @@ import json
 import numpy as np
 
 def create_epfl_calibration():
-    # These are the standard Projection Matrices (P) for the EPFL "Terrace" dataset
+    # EPFL Terrace dataset - all 6 cameras
     # Format: P = K * [R | t]
     calibration_data = {
         "cameras": {
@@ -32,6 +32,20 @@ def create_epfl_calibration():
                     [8.728400e+02, -7.693000e+02, 4.523400e+02, -7.337210e+06],
                     [4.258200e+02, 4.276500e+02, -1.015360e+03, 5.334780e+06],
                     [5.739000e-01, 8.185200e-01, 2.500000e-02, 4.148700e+03]
+                ]
+            },
+            "camera4": {
+                "P": [
+                    [9.837900e+02, -7.242400e+02, 3.618600e+02, -7.237360e+06],
+                    [3.516900e+02, 4.667000e+02, -9.964200e+02, 5.281850e+06],
+                    [4.899000e-01, 8.716800e-01, -7.000000e-03, 4.126460e+03]
+                ]
+            },
+            "camera5": {
+                "P": [
+                    [1.086560e+03, -1.966600e+02, 4.132400e+02, -5.997280e+06],
+                    [2.281500e+02, 7.239800e+02, -9.577500e+02, 5.209860e+06],
+                    [1.154000e-01, 9.933400e-01, -1.230000e-02, 4.120910e+03]
                 ]
             }
         }
