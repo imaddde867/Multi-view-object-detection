@@ -1,0 +1,4 @@
+train: data_train-test/train/images
+val: data_train-test/test/images
+nc: 3
+names: ["person", "car", "bus"]

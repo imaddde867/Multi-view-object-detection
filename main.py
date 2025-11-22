@@ -1,178 +1,161 @@
-import json
-import cv2
-import numpy as np
-import os
-import glob
-from triangulation import Triangulator
-from feature_detection import FeatureDetector
+"""Run multi-view object detection using YOLO outputs + triangulation."""
+from __future__ import annotations
 
-def load_calibration(file_path):
-    with open(file_path, 'r') as f:
+import argparse
+import json
+import os
+from typing import Dict, Iterable, List
+
+import numpy as np
+
+from multiview_matching import match_and_triangulate
+from triangulation import Triangulator
+from yolo_loader import YoloDetectionLoader, load_class_names
+
+
+def parse_camera_indices(camera_arg: str) -> List[int]:
+    tokens = [tok.strip() for tok in camera_arg.split(",") if tok.strip()]
+    if not tokens:
+        raise ValueError("At least one camera index is required")
+    return [int(tok) for tok in tokens]
+
+
+def load_calibration(file_path: str) -> List[np.ndarray]:
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(
+            f"Calibration file '{file_path}' not found. Run create_calibration.py first."
+        )
+
+    with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
-    projections = {}
-    for cam_id, cam_data in data['cameras'].items():
-        P = np.array(cam_data['P'], dtype=np.float32)
-        idx = int(cam_id.replace('camera', ''))
+
+    projections: Dict[int, np.ndarray] = {}
+    for cam_id, cam_data in data.get("cameras", {}).items():
+        P = np.array(cam_data["P"], dtype=np.float64)
+        idx = int(cam_id.replace("camera", ""))
         projections[idx] = P
-    
+
+    if not projections:
+        raise RuntimeError("Calibration file does not contain any cameras")
+
     return [projections[i] for i in sorted(projections.keys())]
 
-def load_images_for_frame(base_path, frame_number, camera_indices):
-    images = {}
-    frame_str = f"{frame_number:08d}"
-    
-    print(f"\n--- Loading Frame {frame_number} ---")
-    
-    for cam_idx in camera_indices:
-        img_path = os.path.join(base_path, f"c{cam_idx}", f"{frame_str}.jpg")
-        
-        if os.path.exists(img_path):
-            img = cv2.imread(img_path)
-            if img is not None:
-                images[cam_idx] = img
-                print(f"✓ Loaded camera {cam_idx}: {img.shape}")
-            else:
-                print(f"✗ Failed to read: {img_path}")
-        else:
-            print(f"✗ Not found: {img_path}")
-            
-    return images
 
-def main():
-    image_folder = "multiclass_ground_truth_images" 
-    calibration_file = "epfl-calibration.json"
-    
-    camera_indices = [0, 1, 2, 3, 4, 5]
-    frame_num = 150
-    reprojection_threshold = 1.5
+def gather_frames(loader: YoloDetectionLoader, args) -> List[int]:
+    if args.all_frames:
+        frames = loader.available_frames()
+        if args.max_frames:
+            frames = frames[: args.max_frames]
+        return frames
+    return [args.frame]
 
-    if not os.path.exists(calibration_file):
-        print(f"Error: Calibration file '{calibration_file}' not found. Run create_calibration.py first.")
-        return
 
-    print("=" * 60)
-    print("EPFL Multi-View 3D Reconstruction Pipeline")
-    print("=" * 60)
+def save_point_cloud(points: Iterable[np.ndarray], file_path: str) -> None:
+    with open(file_path, "w", encoding="utf-8") as f:
+        for point in points:
+            f.write(f"v {point[0]} {point[1]} {point[2]}\n")
 
-    projections = load_calibration(calibration_file)
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Multi-view object detection pipeline")
+    parser.add_argument("--calibration", default="epfl-calibration.json")
+    parser.add_argument("--labels-dir", default="Yolov8_Multi-view-main/yolo_labels")
+    parser.add_argument("--image-root", default="multiclass_ground_truth_images")
+    parser.add_argument("--data-yaml", default="Yolov8_Multi-view-main/data.yaml")
+    parser.add_argument("--frame", type=int, default=150, help="Frame index to process")
+    parser.add_argument("--all-frames", action="store_true", help="Process every available frame")
+    parser.add_argument("--max-frames", type=int, help="Optional cap when using --all-frames")
+    parser.add_argument("--min-conf", type=float, default=0.25)
+    parser.add_argument("--max-reproj-error", type=float, default=10.0)
+    parser.add_argument("--pixel-tolerance", type=float, default=15.0)
+    parser.add_argument("--merge-distance", type=float, default=500.0)
+    parser.add_argument(
+        "--cameras",
+        default="0,1,2,3,4,5",
+        help="Comma-separated camera indices to consider",
+    )
+    parser.add_argument(
+        "--output-obj",
+        default="output_cloud.obj",
+        help="Where to save aggregated 3D points (set blank to skip)",
+    )
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    camera_indices = parse_camera_indices(args.cameras)
+    projections = load_calibration(args.calibration)
     triangulator = Triangulator(projections)
-    detector = FeatureDetector()
 
-    images = load_images_for_frame(image_folder, frame_num, camera_indices)
-    
-    if len(images) < 2:
-        print("✗ Not enough images loaded to perform triangulation.")
+    class_names = load_class_names(args.data_yaml)
+
+    print("=" * 70)
+    print("EPFL Multi-View Object Detection")
+    print("=" * 70)
+    print(f"Calibration: {args.calibration}")
+    print(f"Labels dir : {args.labels_dir}")
+    print(f"Images dir : {args.image_root}")
+    print(f"Cameras    : {camera_indices}")
+
+    loader = YoloDetectionLoader(
+        labels_dir=args.labels_dir,
+        image_root=args.image_root,
+        class_names=class_names,
+        camera_indices=camera_indices,
+    )
+
+    frames = gather_frames(loader, args)
+    if not frames:
+        print("No frames found. Exiting.")
         return
 
-    print(f"\n✓ Loaded {len(images)} images")
+    print(f"Frames     : {frames[:5]}{'...' if len(frames) > 5 else ''} (total {len(frames)})")
 
-    print("\n--- Step 1: Feature Detection ---")
-    features = {}
-    for cam_idx in sorted(images.keys()):
-        kp, des = detector.detect_features(images[cam_idx])
-        if des is not None:
-            features[cam_idx] = (kp, des)
-            print(f"Camera {cam_idx}: {len(kp)} features detected")
-        else:
-            print(f"Camera {cam_idx}: No features detected")
+    aggregated_points: List[np.ndarray] = []
 
-    print("\n--- Step 2: Feature Matching & Triangulation ---")
-    all_points_3d = []
-    match_stats = []
-    
-    for i, cam1 in enumerate(sorted(features.keys())):
-        for cam2 in sorted(features.keys())[i+1:]:
-            kp1, des1 = features[cam1]
-            kp2, des2 = features[cam2]
-            
-            matches = detector.match_features(des1, des2, kp1, kp2)
-            
-            if len(matches) < 8:
-                print(f"Camera {cam1} <-> {cam2}: {len(matches)} matches (skipped)")
-                continue
-            
-            pts1 = np.array([kp1[m.queryIdx].pt for m in matches])
-            pts2 = np.array([kp2[m.trainIdx].pt for m in matches])
-            
-            points_3d = triangulator.triangulate_points(cam1, cam2, pts1, pts2)
-            
-            if len(points_3d) > 0:
-                all_points_3d.extend(points_3d)
-                match_stats.append((cam1, cam2, len(matches), len(points_3d)))
-                print(f"Camera {cam1} <-> {cam2}: {len(matches)} matches → {len(points_3d)} valid 3D points")
-            else:
-                print(f"Camera {cam1} <-> {cam2}: {len(matches)} matches → 0 valid 3D points")
+    for frame_id in frames:
+        detections = loader.load_frame(frame_id)
+        detections_count = sum(len(v) for v in detections.values())
+        print(f"\nFrame {frame_id}: {detections_count} detections across {len(detections)} cameras")
 
-    all_points_3d = np.array(all_points_3d)
-    print(f"\n✓ Total 3D points before filtering: {len(all_points_3d)}")
-    
-    if len(all_points_3d) > 0:
-        print(f"  Min coords: {np.min(all_points_3d, axis=0)}")
-        print(f"  Max coords: {np.max(all_points_3d, axis=0)}")
-        print(f"  Mean coords: {np.mean(all_points_3d, axis=0)}")
+        if len(detections) < 2:
+            print("  ↳ Skipped (need detections from at least two cameras)")
+            continue
 
-    print("\n--- Step 3: Reprojection Error Filtering ---")
-    if len(all_points_3d) > 0:
-        filtered_points = []
-        depth_failures = 0
-        bounds_failures = 0
-        
-        for pt_3d in all_points_3d:
-            valid = True
-            depth_ok = True
-            bounds_ok = True
-            
-            for cam_idx in sorted(features.keys()):
-                try:
-                    pt_2d_proj = triangulator.P_matrices[cam_idx] @ np.append(pt_3d, 1)
-                    
-                    if pt_2d_proj[2] <= 0:
-                        depth_ok = False
-                        valid = False
-                        break
-                    
-                    u_proj = pt_2d_proj[0] / pt_2d_proj[2]
-                    v_proj = pt_2d_proj[1] / pt_2d_proj[2]
-                    
-                    h, w = images[cam_idx].shape[:2]
-                    if u_proj < -200 or u_proj >= w + 200 or v_proj < -200 or v_proj >= h + 200:
-                        bounds_ok = False
-                        valid = False
-                        break
-                        
-                except:
-                    valid = False
-                    break
-            
-            if not depth_ok:
-                depth_failures += 1
-            elif not bounds_ok:
-                bounds_failures += 1
-            elif valid:
-                filtered_points.append(pt_3d)
-        
-        filtered_points = np.array(filtered_points)
-        print(f"✓ After depth/bounds check: {len(filtered_points)} points")
-        print(f"  (Depth failures: {depth_failures}, Bounds failures: {bounds_failures})")
-        
-        if len(filtered_points) > 0:
-            center = np.mean(filtered_points, axis=0)
-            bounds = np.max(filtered_points, axis=0) - np.min(filtered_points, axis=0)
-            print(f"\nReconstruction bounds:")
-            print(f"  Center (X, Y, Z): {center}")
-            print(f"  Size (X, Y, Z): {bounds}")
-            print(f"  Points in valid region: {len(filtered_points)}")
+        objects, stats = match_and_triangulate(
+            detections,
+            triangulator,
+            frame_id,
+            min_confidence=args.min_conf,
+            max_reprojection_error=args.max_reproj_error,
+            pixel_tolerance=args.pixel_tolerance,
+            merge_distance=args.merge_distance,
+        )
 
-            output_obj = "output_cloud.obj"
-            with open(output_obj, "w") as f:
-                for p in filtered_points:
-                    f.write(f"v {p[0]} {p[1]} {p[2]}\n")
-            print(f"\n✓ Saved 3D point cloud to '{output_obj}'")
+        if not objects:
+            print(
+                f"  ↳ No valid matches (pairs tried: {stats.pair_candidates}, accepted: {stats.accepted_pairs})"
+            )
+            continue
 
-    print("\n" + "=" * 60)
-    print("Reconstruction complete!")
-    print("=" * 60)
+        avg_views = sum(obj.num_views() for obj in objects) / len(objects)
+        print(
+            f"  ↳ {len(objects)} objects | {stats.accepted_pairs}/{stats.pair_candidates} valid pairs | "
+            f"avg views {avg_views:.1f}"
+        )
+
+        for obj in objects:
+            aggregated_points.append(obj.point_3d)
+
+    if aggregated_points and args.output_obj:
+        save_point_cloud(aggregated_points, args.output_obj)
+        print(f"\nSaved {len(aggregated_points)} 3D points to {args.output_obj}")
+
+    print("\nDone.")
+
 
 if __name__ == "__main__":
     main()

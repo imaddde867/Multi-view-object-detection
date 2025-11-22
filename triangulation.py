@@ -115,6 +115,24 @@ class Triangulator:
         X_hom = np.append(point_3d, 1)
         depth = P[2] @ X_hom
         return depth > 0
+
+    def project_point(self, point_3d, cam_idx):
+        """Project a 3D point into the image plane of a camera."""
+
+        P = self.P_matrices[cam_idx]
+        X_hom = np.append(point_3d, 1.0)
+        proj = P @ X_hom
+
+        if proj[2] <= 0:
+            return None
+
+        u = proj[0] / proj[2]
+        v = proj[1] / proj[2]
+
+        if not np.isfinite(u) or not np.isfinite(v):
+            return None
+
+        return np.array([float(u), float(v)])
     
     def triangulate_points(self, cam_idx1, cam_idx2, points1, points2):
         """
