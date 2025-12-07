@@ -35,7 +35,7 @@ for split in ["train", "val", "test"]:
 # -----------------------------
 all_labels = glob(os.path.join(yolo_label_root, "*.txt"))
 if not all_labels:
-    print("❌ No label files found! Check your yolo_labels directory.")
+    print("No label files found! Check your yolo_labels directory.")
     exit(1)
 
 # -----------------------------
@@ -45,7 +45,7 @@ frame_to_labels = defaultdict(list)
 for label_file in all_labels:
     base = os.path.basename(label_file)
     if "_" not in base:
-        print(f"⚠️ Unexpected label filename format: {base}")
+        print(f"Unexpected label filename format: {base}")
         continue
     frame_num = base.split("_")[0]
     frame_to_labels[frame_num].append(label_file)
@@ -96,7 +96,7 @@ for split_frames in [train_frames, val_frames, test_frames]:
     all_frames |= split_frames
 
 if len(all_frames) != len(train_frames | val_frames | test_frames):
-    print("⚠️ Warning: some frames may still be duplicated across splits!")
+    print("Warning: some frames may still be duplicated across splits!")
 
 # -----------------------------
 # Copy images and labels
@@ -131,15 +131,15 @@ for frame_num, label_files in frame_to_labels.items():
 # -----------------------------
 # Print stats
 # -----------------------------
-print("\n✅ Train/Val/Test split completed!")
+print("\nTrain/Val/Test split completed!")
 print(f"Train: {stats['train']} pairs")
 print(f"Val:   {stats['val']} pairs")
 print(f"Test:  {stats['test']} pairs")
 print(f"Total: {sum(stats.values())} pairs")
 
 if missing_images:
-    print(f"\n⚠️ Warning: {len(missing_images)} images missing, first 10:")
+    print(f"\nWarning: {len(missing_images)} images missing, first 10:")
     for img in missing_images[:10]:
         print(f"   - {img}")
 
-print(f"\n💾 Dataset saved to: {output_root}/")
+print(f"\nDataset saved to: {output_root}/")

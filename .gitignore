@@ -4,9 +4,15 @@
 # Dataset folders
 data_train_val_test_car_person/
 data_train-test_3_classes/
+data_train_balanced/
+data_train-test/
 data_zip_file/
 multiclass_ground_truth/
 multiclass_ground_truth_images/
+
+# Training results
+runs/
+Detection/
 
 # Cache
 __pycache__/

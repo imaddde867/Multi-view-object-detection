@@ -40,19 +40,19 @@ def get_image_dimensions(img_path, cache):
 annotations = defaultdict(list)
 img_dim_cache = {}
 
-print("📂 Reading annotations from all classes...")
+print("Reading annotations from all classes...")
 
 for folder_name, class_id in folder_to_class.items():
     label_path = os.path.join(label_root, folder_name, "visible_frame")
     label_files = glob(os.path.join(label_path, "*.txt"))
     
-    print(f"  → Processing {folder_name} ({len(label_files)} files)")
+    print(f"  -> Processing {folder_name} ({len(label_files)} files)")
 
     for lf in label_files:
         base = os.path.basename(lf)
         parts = base.split("_")
         if len(parts) != 3:
-            print(f"  ⚠️ Unexpected filename format: {base}")
+            print(f"  Unexpected filename format: {base}")
             continue
         
         frame_num = int(parts[1].replace("frame", ""))
@@ -65,7 +65,7 @@ for folder_name, class_id in folder_to_class.items():
         # Get image dimensions
         dims = get_image_dimensions(img_path, img_dim_cache)
         if dims is None:
-            print(f"  ⚠️ Image not found or unreadable: {img_path}")
+            print(f"  Image not found or unreadable: {img_path}")
             continue
         
         h, w = dims
@@ -84,7 +84,7 @@ for folder_name, class_id in folder_to_class.items():
                 
                 # Validate normalized coordinates
                 if not (0 <= x_c <= 1 and 0 <= y_c <= 1 and 0 < w_n <= 1 and 0 < h_n <= 1):
-                    print(f"  ⚠️ Invalid bbox in {base}: {x_c}, {y_c}, {w_n}, {h_n}")
+                    print(f"  Invalid bbox in {base}: {x_c}, {y_c}, {w_n}, {h_n}")
                     continue
                 
                 # Store annotation
@@ -92,13 +92,13 @@ for folder_name, class_id in folder_to_class.items():
                 annotations[key].append(f"{class_id} {x_c:.6f} {y_c:.6f} {w_n:.6f} {h_n:.6f}")
 
 # Write aggregated YOLO labels
-print(f"\n💾 Writing {len(annotations)} YOLO label files...")
+print(f"\nWriting {len(annotations)} YOLO label files...")
 
 for (frame_num, cam_num), yolo_lines in annotations.items():
     yolo_file_path = os.path.join(yolo_label_root, f"{frame_num:08d}_c{cam_num}.txt")
     with open(yolo_file_path, "w") as f:
         f.write("\n".join(yolo_lines))
 
-print(f"✅ YOLO label conversion complete!")
+print(f"YOLO label conversion complete!")
 print(f"   Total frames processed: {len(annotations)}")
 print(f"   Labels saved to: {yolo_label_root}/")

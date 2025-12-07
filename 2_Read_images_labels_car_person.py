@@ -24,16 +24,16 @@ test_ratio  = 0.15
 # -----------------------------
 random.seed(42)
 
-print("📂 Creating train/val/test split (keeping ALL camera views together)...")
+print("Creating train/val/test split (keeping ALL camera views together)...")
 print(f"   Ratios: Train={train_ratio}, Val={val_ratio}, Test={test_ratio}\n")
 
 # -----------------------------
 # CLEAN OUTPUT DIRECTORY FIRST
 # -----------------------------
 if os.path.exists(output_root):
-    print(f"🗑️  Cleaning existing output directory: {output_root}")
+    print(f"Cleaning existing output directory: {output_root}")
     shutil.rmtree(output_root)
-    print("   ✓ Old files removed\n")
+    print("   Old files removed\n")
 
 # -----------------------------
 # Create output folders
@@ -47,7 +47,7 @@ for split in ["train", "val", "test"]:
 # -----------------------------
 all_labels = glob(os.path.join(yolo_label_root, "*.txt"))
 if not all_labels:
-    print("❌ No label files found! Check your yolo_labels directory.")
+    print("No label files found! Check your yolo_labels directory.")
     exit(1)
 
 print(f"Found {len(all_labels)} label files")
@@ -59,7 +59,7 @@ frame_to_labels = defaultdict(list)
 for label_file in all_labels:
     base = os.path.basename(label_file)
     if "_" not in base:
-        print(f"⚠️ Unexpected label filename format: {base}")
+        print(f"Unexpected label filename format: {base}")
         continue
     
     # Extract frame number (e.g., "00000149" from "00000149_c3.txt")
@@ -95,7 +95,7 @@ for frame_num, label_files in frame_to_labels.items():
                     classes_in_frame.add(class_id)
     frame_classes[frame_num] = classes_in_frame
 
-print(f"\n📊 Class distribution:")
+print(f"\nClass distribution:")
 class_to_frames = defaultdict(set)
 for frame_num, classes in frame_classes.items():
     for class_id in classes:
@@ -117,7 +117,7 @@ train_frames = set(frames[:num_train])
 val_frames   = set(frames[num_train:num_train + num_val])
 test_frames  = set(frames[num_train + num_val:])
 
-print(f"\n🔀 Initial split (by frames, not images):")
+print(f"\nInitial split (by frames, not images):")
 print(f"   Train: {len(train_frames)} frames")
 print(f"   Val:   {len(val_frames)} frames")
 print(f"   Test:  {len(test_frames)} frames")
@@ -132,7 +132,7 @@ def check_class_coverage(split_frames, split_name):
         classes_present.update(frame_classes[frame])
     return classes_present
 
-print(f"\n🔍 Checking class coverage...")
+print(f"\nChecking class coverage...")
 train_classes = check_class_coverage(train_frames, "train")
 val_classes = check_class_coverage(val_frames, "val")
 test_classes = check_class_coverage(test_frames, "test")
@@ -155,7 +155,7 @@ def fix_missing_classes(target_frames, source_frames, target_name):
         if candidates:
             chosen = random.choice(candidates)
             moved_frames.add(chosen)
-            print(f"   ⚠️ Moving frame {chosen} to {target_name} (missing class {class_id})")
+            print(f"   Moving frame {chosen} to {target_name} (missing class {class_id})")
     
     return moved_frames
 
@@ -183,7 +183,7 @@ assert len(train_frames & test_frames) == 0, "Train and test overlap!"
 assert len(val_frames & test_frames) == 0, "Val and test overlap!"
 assert len(train_frames) + len(val_frames) + len(test_frames) == len(frames), "Frame count mismatch!"
 
-print(f"\n✅ Final split (frames only, ALL cameras per frame stay together):")
+print(f"\nFinal split (frames only, ALL cameras per frame stay together):")
 print(f"   Train: {len(train_frames)} frames")
 print(f"   Val:   {len(val_frames)} frames")
 print(f"   Test:  {len(test_frames)} frames")
@@ -194,7 +194,7 @@ print(f"   Test:  {len(test_frames)} frames")
 stats = {"train": 0, "val": 0, "test": 0}
 missing_images = []
 
-print(f"\n📦 Copying files...")
+print(f"\nCopying files...")
 
 # Map frames to splits
 frame_split_map = {}
@@ -234,7 +234,7 @@ for frame_num, label_files in frame_to_labels.items():
 for split in ["train", "val", "test"]:
     split_frames = train_frames if split == "train" else (val_frames if split == "val" else test_frames)
     total_images = sum(len(frame_to_labels[f]) for f in split_frames)
-    print(f"   {split}: {len(split_frames)} frames × ~{total_images/len(split_frames):.1f} cameras = {total_images} images")
+    print(f"   {split}: {len(split_frames)} frames x ~{total_images/len(split_frames):.1f} cameras = {total_images} images")
 
 # -----------------------------
 # Create YOLO dataset.yaml
@@ -261,20 +261,20 @@ with open(yaml_path, 'w') as f:
 # -----------------------------
 # Print final stats
 # -----------------------------
-print("\n✅ Dataset split completed!")
+print("\nDataset split completed!")
 print(f"   Train: {stats['train']} images from {len(train_frames)} frames")
 print(f"   Val:   {stats['val']} images from {len(val_frames)} frames")
 print(f"   Test:  {stats['test']} images from {len(test_frames)} frames")
 print(f"   Total: {sum(stats.values())} images from {len(frames)} frames")
 
 if missing_images:
-    print(f"\n⚠️ Warning: {len(missing_images)} images missing")
+    print(f"\nWarning: {len(missing_images)} images missing")
 
-print(f"\n💾 Dataset saved to: {output_root}/")
-print(f"📄 YAML config: {yaml_path}")
+print(f"\nDataset saved to: {output_root}/")
+print(f"YAML config: {yaml_path}")
 
 # Verify no frame appears in multiple splits
-print("\n🔍 Verifying frame integrity...")
+print("\nVerifying frame integrity...")
 sample_checks = random.sample(list(frame_to_labels.keys()), min(5, len(frame_to_labels)))
 all_good = True
 for frame in sample_checks:
@@ -285,12 +285,12 @@ for frame in sample_checks:
             splits_found.append(split)
     
     if len(splits_found) == 1:
-        print(f"   ✓ Frame {frame}: all cameras in {splits_found[0]}")
+        print(f"   Frame {frame}: all cameras in {splits_found[0]}")
     else:
-        print(f"   ❌ Frame {frame}: found in {splits_found}!")
+        print(f"   Frame {frame}: found in {splits_found}!")
         all_good = False
 
 if all_good:
-    print("\n✅ All frames correctly grouped with all their cameras!")
+    print("\nAll frames correctly grouped with all their cameras!")
 else:
-    print("\n❌ ERROR: Some frames split across multiple sets!")
+    print("\nERROR: Some frames split across multiple sets!")

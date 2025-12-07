@@ -59,24 +59,24 @@ annotations = defaultdict(list)
 img_dim_cache = {}
 total_boxes = 0
 
-print("📂 Reading annotations for person and car classes...")
+print("Reading annotations for person and car classes...")
 
 for folder_name, class_id in folder_to_class.items():
     label_path = os.path.join(label_root, folder_name, "visible_frame")
     
     print(f"\n  Checking: {label_path}")
     if not os.path.exists(label_path):
-        print(f"  ❌ Path does not exist!")
+        print(f"  Path does not exist!")
         continue
     
     label_files = glob(os.path.join(label_path, "*.txt"))
-    print(f"  → Processing {folder_name} ({len(label_files)} files)")
+    print(f"  -> Processing {folder_name} ({len(label_files)} files)")
 
     for lf in label_files:
         base = os.path.basename(lf)
         parts = base.split("_")
         if len(parts) != 3:
-            print(f"  ⚠️ Unexpected filename format: {base}")
+            print(f"  Unexpected filename format: {base}")
             continue
         
         frame_num = int(parts[1].replace("frame", ""))
@@ -89,7 +89,7 @@ for folder_name, class_id in folder_to_class.items():
         # Get image dimensions
         dims = get_image_dimensions(img_path, img_dim_cache)
         if dims is None:
-            print(f"  ⚠️ Image not found or unreadable: {img_path}")
+            print(f"  Image not found or unreadable: {img_path}")
             continue
         
         h, w = dims
@@ -118,14 +118,14 @@ for folder_name, class_id in folder_to_class.items():
                 annotations[key].append(f"{class_id} {x_c:.6f} {y_c:.6f} {w_n:.6f} {h_n:.6f}")
 
 # Write aggregated YOLO labels
-print(f"\n💾 Writing {len(annotations)} YOLO label files...")
+print(f"\nWriting {len(annotations)} YOLO label files...")
 
 for (frame_num, cam_num), yolo_lines in annotations.items():
     yolo_file_path = os.path.join(yolo_label_root, f"{frame_num:08d}_c{cam_num}.txt")
     with open(yolo_file_path, "w") as f:
         f.write("\n".join(yolo_lines))
 
-print(f"✅ YOLO label conversion complete!")
+print(f"YOLO label conversion complete!")
 print(f"   Total frames processed: {len(annotations)}")
 print(f"   Total bounding boxes: {total_boxes}")
 print(f"   Classes: person (0), car (1)")
