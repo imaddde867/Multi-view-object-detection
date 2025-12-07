@@ -2,19 +2,24 @@
 *.pt
 
 # Dataset folders
+data/processed/
+data/raw/multiclass_ground_truth/
+data/raw/multiclass_ground_truth_images/
+
+# Legacy ignore (in case they are created in root)
 data_train_val_test_car_person/
 data_train-test_3_classes/
 data_train_balanced/
 data_train-test/
 data_zip_file/
-multiclass_ground_truth/
-multiclass_ground_truth_images/
 
 # Training results
 runs/
-Detection/
+results/Detection/
+results/Detection_2Class/
+results/Detection_Balanced/
 
 # Cache
 __pycache__/
 *.pyc
-
+scripts/__pycache__/
