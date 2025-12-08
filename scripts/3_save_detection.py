@@ -15,6 +15,7 @@ parser.add_argument("--imgsz", type=int, default=960, help="Inference image size
 parser.add_argument("--conf", type=float, default=0.35, help="Confidence threshold for YOLO inference")
 parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold for YOLO NMS")
 parser.add_argument("--slowdown", type=float, default=2.0, help="Slowdown factor for output FPS (1 keeps realtime)")
+parser.add_argument("--box_shrink", type=float, default=0.0, help="Fraction (0-0.4) to shrink boxes for display/JSON")
 args = parser.parse_args()
 
 model_path = args.model
@@ -26,6 +27,7 @@ img_size = max(320, args.imgsz)
 conf_thres = max(0.01, min(0.99, args.conf))
 iou_thres = max(0.1, min(0.99, args.iou))
 slowdown_factor = max(0.5, args.slowdown)
+box_shrink = min(0.4, max(0.0, args.box_shrink))
 
 print(f"Model: {model_path}")
 print(f"Video 1: {video1_path}")
@@ -51,6 +53,19 @@ def clip_bbox(bbox, width, height):
     if x2 <= x1 or y2 <= y1:
         return None
     return x1, y1, x2, y2
+
+
+def shrink_bbox(bbox, shrink_factor):
+    """Pull bbox edges toward center for cleaner visualization."""
+    if shrink_factor <= 0:
+        return bbox
+    x1, y1, x2, y2 = bbox
+    width = x2 - x1
+    height = y2 - y1
+    delta_w = int(width * shrink_factor / 2)
+    delta_h = int(height * shrink_factor / 2)
+    new_bbox = (x1 + delta_w, y1 + delta_h, x2 - delta_w, y2 - delta_h)
+    return new_bbox if new_bbox[0] < new_bbox[2] and new_bbox[1] < new_bbox[3] else bbox
 
 model = YOLO(model_path)
 
@@ -112,14 +127,16 @@ while True:
         if not clipped_box:
             continue
 
+        shrunk_box = shrink_bbox(clipped_box, box_shrink)
+
         cam1_dets.append({
-            "bbox": list(map(int, clipped_box)),
+            "bbox": list(map(int, shrunk_box)),
             "confidence": float(conf),
             "class_id": class_id,
             "class_name": class_name
         })
 
-        x1, y1, x2, y2 = clipped_box
+        x1, y1, x2, y2 = shrunk_box
         color = (0, 255, 0) if class_name == "person" else (0, 0, 255)
         cv2.rectangle(vis_frame1, (x1, y1), (x2, y2), color, 2)
         cv2.putText(vis_frame1, f"{class_name} {conf:.2f}", (x1, y1 - 5),
@@ -136,14 +153,16 @@ while True:
         if not clipped_box:
             continue
 
+        shrunk_box = shrink_bbox(clipped_box, box_shrink)
+
         cam2_dets.append({
-            "bbox": list(map(int, clipped_box)),
+            "bbox": list(map(int, shrunk_box)),
             "confidence": float(conf),
             "class_id": class_id,
             "class_name": class_name
         })
 
-        x1, y1, x2, y2 = clipped_box
+        x1, y1, x2, y2 = shrunk_box
         color = (0, 255, 0) if class_name == "person" else (0, 0, 255)
         cv2.rectangle(vis_frame2, (x1, y1), (x2, y2), color, 2)
         cv2.putText(vis_frame2, f"{class_name} {conf:.2f}", (x1, y1 - 5),
