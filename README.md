@@ -79,6 +79,14 @@ After training, use the best weights to detect and track objects across camera v
 
 Keep these commands handy for tomorrow's presentation so you can jump between pre-recorded and live feeds without editing any scripts.
 
+### Ready-to-Show Assets
+
+* `demo_material/demo_cam34.avi` – side-by-side Cam3/Cam4 detections (latest render).
+* `demo_material/detection_demo.avi` – curated inference highlight reel.
+* `demo_material/training_metrics.csv` – raw training curves linked from `docs/results.md`.
+
+Regenerate `demo_cam34.avi` anytime with the command below so your narrative matches the latest thresholds.
+
 ### Dual-Video Playback (Cam3 + Cam4)
 
 ```bash
@@ -99,6 +107,21 @@ python scripts/3_save_detection.py \
 * `--nms_iou 0.5-0.7` applies an extra per-camera suppression pass to eliminate duplicate boxes on the same subject.
 * `--frame_stride 2` halves the number of processed frames for faster turnaround, and `--skip_json` writes video only (no JSON log).
 * Use `--device cuda:0 --half` on GPU machines to force CUDA/FP16 and squeeze out extra FPS.
+
+### Live Dual-Camera Demo
+
+```bash
+python scripts/live_dual_demo.py \
+  --model demo_material/yolov8m_best.pt \
+  --source1 0 --source2 1 \
+  --imgsz 896 --conf 0.4 --iou 0.45 \
+  --box_shrink 0.15 --nms_iou 0.6 \
+  --device cuda:0 --half
+```
+
+* Use numeric IDs (`0`, `1`, …) for webcams/capture cards, or drop in video file paths.
+* Press `q` to exit; add `--record_out demo_material/live_capture.avi` to archive the combined feed.
+* If CUDA is unavailable, omit `--device/--half` and the script will fall back to CPU.
 
 ### Live Camera Sanity Check
 
