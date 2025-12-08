@@ -87,7 +87,11 @@ def main():
 
     model = YOLO(args.model)
     if args.device:
-        model.to(args.device)
+        try:
+            model.to(args.device)
+        except Exception as exc:  # pragma: no cover
+            print(f"⚠️ Could not switch to {args.device} ({exc}). Falling back to default device.")
+            args.device = None
     if args.half:
         try:
             model.model.half()
