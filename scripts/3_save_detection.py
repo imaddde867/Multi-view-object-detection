@@ -16,6 +16,7 @@ parser.add_argument("--conf", type=float, default=0.35, help="Confidence thresho
 parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold for YOLO NMS")
 parser.add_argument("--slowdown", type=float, default=2.0, help="Slowdown factor for output FPS (1 keeps realtime)")
 parser.add_argument("--box_shrink", type=float, default=0.0, help="Fraction (0-0.4) to shrink boxes for display/JSON")
+parser.add_argument("--nms_iou", type=float, default=0.65, help="Per-camera NMS IoU to remove duplicate boxes of the same class")
 args = parser.parse_args()
 
 model_path = args.model
@@ -28,6 +29,7 @@ conf_thres = max(0.01, min(0.99, args.conf))
 iou_thres = max(0.1, min(0.99, args.iou))
 slowdown_factor = max(0.5, args.slowdown)
 box_shrink = min(0.4, max(0.0, args.box_shrink))
+nms_iou = max(0.1, min(0.95, args.nms_iou))
 
 print(f"Model: {model_path}")
 print(f"Video 1: {video1_path}")
@@ -66,6 +68,32 @@ def shrink_bbox(bbox, shrink_factor):
     delta_h = int(height * shrink_factor / 2)
     new_bbox = (x1 + delta_w, y1 + delta_h, x2 - delta_w, y2 - delta_h)
     return new_bbox if new_bbox[0] < new_bbox[2] and new_bbox[1] < new_bbox[3] else bbox
+
+
+def compute_iou(box1, box2):
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union = area1 + area2 - inter
+    return inter / union if union > 0 else 0.0
+
+
+def apply_nms(detections, iou_threshold):
+    if len(detections) <= 1:
+        return detections
+    ordered = sorted(detections, key=lambda d: d["confidence"], reverse=True)
+    kept = []
+    while ordered:
+        current = ordered.pop(0)
+        kept.append(current)
+        ordered = [det for det in ordered
+                   if det["class_id"] != current["class_id"]
+                   or compute_iou(det["bbox"], current["bbox"]) < iou_threshold]
+    return kept
 
 model = YOLO(model_path)
 
@@ -136,7 +164,12 @@ while True:
             "class_name": class_name
         })
 
-        x1, y1, x2, y2 = shrunk_box
+    cam1_dets = apply_nms(cam1_dets, nms_iou)
+
+    for det in cam1_dets:
+        x1, y1, x2, y2 = det["bbox"]
+        class_name = det["class_name"]
+        conf = det["confidence"]
         color = (0, 255, 0) if class_name == "person" else (0, 0, 255)
         cv2.rectangle(vis_frame1, (x1, y1), (x2, y2), color, 2)
         cv2.putText(vis_frame1, f"{class_name} {conf:.2f}", (x1, y1 - 5),
@@ -162,7 +195,12 @@ while True:
             "class_name": class_name
         })
 
-        x1, y1, x2, y2 = shrunk_box
+    cam2_dets = apply_nms(cam2_dets, nms_iou)
+
+    for det in cam2_dets:
+        x1, y1, x2, y2 = det["bbox"]
+        class_name = det["class_name"]
+        conf = det["confidence"]
         color = (0, 255, 0) if class_name == "person" else (0, 0, 255)
         cv2.rectangle(vis_frame2, (x1, y1), (x2, y2), color, 2)
         cv2.putText(vis_frame2, f"{class_name} {conf:.2f}", (x1, y1 - 5),

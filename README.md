@@ -88,13 +88,14 @@ python scripts/3_save_detection.py \
   --video2 data/raw/testing_videos/Cam4.mp4 \
   --out_json demo_material/demo_cam34.json \
   --out_video demo_material/demo_cam34.avi \
-  --imgsz 960 --conf 0.35 --iou 0.5 --slowdown 1 --box_shrink 0.15
+  --imgsz 960 --conf 0.35 --iou 0.5 --slowdown 1 --box_shrink 0.15 --nms_iou 0.6
 ```
 
 * `--imgsz 960` matches training resolution for tighter boxes.
 * `--conf`/`--iou` can be nudged on the fly (e.g., `--conf 0.45` if you see flicker).
 * Set `--slowdown 2` if you prefer a slower side-by-side playback.
 * `--box_shrink 0.1-0.2` trims boxes inward so people/car overlays stay tight even when the raw YOLO box includes shadows.
+* `--nms_iou 0.5-0.7` applies an extra per-camera suppression pass to eliminate duplicate boxes on the same subject.
 
 ### Live Camera Sanity Check
 
