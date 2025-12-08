@@ -8,7 +8,7 @@ from collections import defaultdict
 # Paths
 # -----------------------------
 image_root = "data/raw/multiclass_ground_truth_images"
-yolo_label_root = "data/processed/yolo_labels_person_car"
+yolo_label_root = "data/processed/yolo_labels"
 output_root = "data/processed/data_train_val_test_car_person"
 
 # -----------------------------
@@ -226,7 +226,16 @@ for frame_num, label_files in frame_to_labels.items():
         label_dst = os.path.join(output_root, split, "labels", f"{frame_num}_{cam_part}.txt")
 
         shutil.copy2(img_src, img_dst)
-        shutil.copy2(label_file, label_dst)
+        
+        # Filter label file to only keep person (0) and car (1)
+        with open(label_file, "r") as f_in, open(label_dst, "w") as f_out:
+            for line in f_in:
+                parts = line.strip().split()
+                if len(parts) > 0:
+                    cls_id = int(parts[0])
+                    if cls_id in [0, 1]:  # Keep only person and car
+                        f_out.write(line)
+        
         stats[split] += 1
 
 # Calculate images per frame for each split
