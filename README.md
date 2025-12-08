@@ -88,7 +88,8 @@ python scripts/3_save_detection.py \
   --video2 data/raw/testing_videos/Cam4.mp4 \
   --out_json demo_material/demo_cam34.json \
   --out_video demo_material/demo_cam34.avi \
-  --imgsz 960 --conf 0.35 --iou 0.5 --slowdown 1 --box_shrink 0.15 --nms_iou 0.6
+  --imgsz 960 --conf 0.35 --iou 0.5 --slowdown 1 \
+  --box_shrink 0.15 --nms_iou 0.6 --frame_stride 1
 ```
 
 * `--imgsz 960` matches training resolution for tighter boxes.
@@ -96,6 +97,8 @@ python scripts/3_save_detection.py \
 * Set `--slowdown 2` if you prefer a slower side-by-side playback.
 * `--box_shrink 0.1-0.2` trims boxes inward so people/car overlays stay tight even when the raw YOLO box includes shadows.
 * `--nms_iou 0.5-0.7` applies an extra per-camera suppression pass to eliminate duplicate boxes on the same subject.
+* `--frame_stride 2` halves the number of processed frames for faster turnaround, and `--skip_json` writes video only (no JSON log).
+* Use `--device cuda:0 --half` on GPU machines to force CUDA/FP16 and squeeze out extra FPS.
 
 ### Live Camera Sanity Check
 

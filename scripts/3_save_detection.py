@@ -17,6 +17,10 @@ parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold for YO
 parser.add_argument("--slowdown", type=float, default=2.0, help="Slowdown factor for output FPS (1 keeps realtime)")
 parser.add_argument("--box_shrink", type=float, default=0.0, help="Fraction (0-0.4) to shrink boxes for display/JSON")
 parser.add_argument("--nms_iou", type=float, default=0.65, help="Per-camera NMS IoU to remove duplicate boxes of the same class")
+parser.add_argument("--frame_stride", type=int, default=1, help="Process every Nth frame to speed up export")
+parser.add_argument("--skip_json", action="store_true", help="Skip JSON export for fastest turnaround")
+parser.add_argument("--device", type=str, default=None, help="Inference device override (e.g., cuda:0, mps, cpu)")
+parser.add_argument("--half", action="store_true", help="Use half precision (CUDA only) for faster inference")
 args = parser.parse_args()
 
 model_path = args.model
@@ -30,6 +34,10 @@ iou_thres = max(0.1, min(0.99, args.iou))
 slowdown_factor = max(0.5, args.slowdown)
 box_shrink = min(0.4, max(0.0, args.box_shrink))
 nms_iou = max(0.1, min(0.95, args.nms_iou))
+frame_stride = max(1, args.frame_stride)
+skip_json = args.skip_json
+device = args.device
+use_half = args.half
 
 print(f"Model: {model_path}")
 print(f"Video 1: {video1_path}")
@@ -96,6 +104,13 @@ def apply_nms(detections, iou_threshold):
     return kept
 
 model = YOLO(model_path)
+if device:
+    model.to(device)
+if use_half:
+    try:
+        model.model.half()
+    except AttributeError:
+        print("⚠️ Half precision not supported on this device, continuing in full precision.")
 
 cap1 = cv2.VideoCapture(video1_path)
 cap2 = cv2.VideoCapture(video2_path)
@@ -113,22 +128,27 @@ height2 = int(cap2.get(cv2.CAP_PROP_FRAME_HEIGHT))
 # FPS settings
 input_fps = int(cap1.get(cv2.CAP_PROP_FPS))
 input_fps = max(1, input_fps)
-
-output_fps = max(1, int(input_fps / SLOWDOWN_FACTOR))
+processing_fps = max(1, int(input_fps / frame_stride))
+output_fps = max(1, int(max(1, processing_fps) / SLOWDOWN_FACTOR))
 
 print(f"🎥 Input FPS: {input_fps}")
+print(f"📉 Frame stride: {frame_stride} (processing {processing_fps} FPS)")
 print(f"🐌 Output FPS (slowed): {output_fps}")
 
 out = None
-matched_data = {
-    "metadata": {
-        "cam1": {"width": width1, "height": height1},
-        "cam2": {"width": width2, "height": height2},
-        "fps": input_fps
-    },
-    "frames": []
-}
-frame_num = 0
+matched_data = None
+if not skip_json:
+    matched_data = {
+        "metadata": {
+            "cam1": {"width": width1, "height": height1},
+            "cam2": {"width": width2, "height": height2},
+            "fps": processing_fps
+        },
+        "frames": []
+    }
+
+processed_frames = 0
+raw_frame_idx = 0
 
 print("🎬 Processing videos and generating slowed visualization...")
 
@@ -137,6 +157,10 @@ while True:
     ret2, frame2 = cap2.read()
     if not ret1 or not ret2:
         break
+
+    raw_frame_idx += 1
+    if raw_frame_idx % frame_stride != 0:
+        continue
 
     vis_frame1 = frame1.copy()
     vis_frame2 = frame2.copy()
@@ -206,11 +230,12 @@ while True:
         cv2.putText(vis_frame2, f"{class_name} {conf:.2f}", (x1, y1 - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
-    matched_data["frames"].append({
-        "frame": frame_num,
-        "cam1": cam1_dets,
-        "cam2": cam2_dets
-    })
+    if matched_data is not None:
+        matched_data["frames"].append({
+            "frame": processed_frames,
+            "cam1": cam1_dets,
+            "cam2": cam2_dets
+        })
 
     # Combine views
     h = min(vis_frame1.shape[0], vis_frame2.shape[0])
@@ -228,13 +253,14 @@ while True:
 
     out.write(combined)
 
-    frame_num += 1
-    if frame_num % 50 == 0:
-        print(f"  Processed {frame_num} frames...")
+    processed_frames += 1
+    if processed_frames % 50 == 0:
+        print(f"  Processed {processed_frames} frames...")
 
 # Save JSON
-with open(output_json_path, "w") as f:
-    json.dump(matched_data, f, indent=2)
+if matched_data is not None:
+    with open(output_json_path, "w") as f:
+        json.dump(matched_data, f, indent=2)
 
 cap1.release()
 cap2.release()
@@ -242,8 +268,12 @@ if out:
     out.release()
 cv2.destroyAllWindows()
 
-print(f"\n✅ JSON saved to {output_json_path}")
+if matched_data is not None:
+    print(f"\n✅ JSON saved to {output_json_path}")
+else:
+    print("\nℹ️ JSON export skipped")
 print(f"🐌 Slowed video saved to {output_video_path}")
-print(f"📊 Total frames processed: {frame_num}")
-print(f"📊 Cam1 total detections: {sum(len(f['cam1']) for f in matched_data['frames'])}")
-print(f"📊 Cam2 total detections: {sum(len(f['cam2']) for f in matched_data['frames'])}")
+print(f"📊 Total frames processed: {processed_frames}")
+if matched_data is not None:
+    print(f"📊 Cam1 total detections: {sum(len(f['cam1']) for f in matched_data['frames'])}")
+    print(f"📊 Cam2 total detections: {sum(len(f['cam2']) for f in matched_data['frames'])}")
