@@ -8,7 +8,7 @@ except ImportError:
     print("❌ Ultralytics YOLOv8 not installed. Please run: pip install ultralytics")
     sys.exit(1)
 
-def train(mode, epochs, img_size, batch_size):
+def train(mode, epochs, img_size, batch_size, model_name):
     print(f"Starting training in {mode} mode...")
     
     # Select Dataset
@@ -29,7 +29,7 @@ def train(mode, epochs, img_size, batch_size):
         return
 
     print(f"Dataset: {dataset_path}")
-    print(f"Epochs: {epochs}, Img Size: {img_size}, Batch: {batch_size}")
+    print(f"Epochs: {epochs}, Img Size: {img_size}, Batch: {batch_size}, Model: {model_name}")
 
     # Check for device (MPS for Mac M-series, CUDA, or CPU)
     import torch
@@ -44,7 +44,7 @@ def train(mode, epochs, img_size, batch_size):
         print("No GPU detected. Training on CPU (this will be slow).")
 
     # Load Model (Nano model for speed, can be changed)
-    model = YOLO("yolov8n.pt") 
+    model = YOLO(model_name) 
 
     # Train
     results = model.train(
@@ -53,7 +53,7 @@ def train(mode, epochs, img_size, batch_size):
         imgsz=img_size,
         batch=batch_size,
         project=project_name,
-        name=f"yolov8n_{mode}",
+        name=f"{model_name.split('.')[0]}_{mode}",
         exist_ok=True, # Overwrite if exists
         patience=10, # Early stopping
         verbose=True,
@@ -68,7 +68,8 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
     parser.add_argument("--img", type=int, default=640, help="Image size")
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
+    parser.add_argument("--model", type=str, default="yolov8n.pt", help="YOLO model version (e.g., yolov8n.pt, yolov8m.pt)")
     
     args = parser.parse_args()
     
-    train(args.mode, args.epochs, args.img, args.batch)
+    train(args.mode, args.epochs, args.img, args.batch, args.model)

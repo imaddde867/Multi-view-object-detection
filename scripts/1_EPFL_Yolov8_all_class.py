@@ -79,12 +79,25 @@ for folder_name, class_id in folder_to_class.items():
                 
                 x_abs, y_abs, w_abs, h_abs = map(float, parts)
                 
-                # Convert to YOLO format
-                x_c, y_c, w_n, h_n = convert_to_yolo(x_abs, y_abs, w_abs, h_abs, w, h)
+                # Clip bounding box to image boundaries
+                x1 = max(0, min(x_abs, w))
+                y1 = max(0, min(y_abs, h))
+                x2 = max(0, min(x_abs + w_abs, w))
+                y2 = max(0, min(y_abs + h_abs, h))
                 
-                # Validate normalized coordinates
+                w_new = x2 - x1
+                h_new = y2 - y1
+
+                # Discard if the box is too small (e.g. < 2 pixels) or invalid
+                if w_new < 2 or h_new < 2:
+                    continue
+
+                # Convert to YOLO format
+                x_c, y_c, w_n, h_n = convert_to_yolo(x1, y1, w_new, h_new, w, h)
+                
+                # Double check normalized coordinates (should be valid now due to clipping)
                 if not (0 <= x_c <= 1 and 0 <= y_c <= 1 and 0 < w_n <= 1 and 0 < h_n <= 1):
-                    print(f"  Invalid bbox in {base}: {x_c}, {y_c}, {w_n}, {h_n}")
+                    # print(f"  Warning: Unexpected invalid bbox after clipping in {base}: {x_c}, {y_c}, {w_n}, {h_n}")
                     continue
                 
                 # Store annotation
