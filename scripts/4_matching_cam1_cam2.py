@@ -1,17 +1,29 @@
 import cv2
-from ultralytics import YOLO
 import json
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+import random
 
-model_path = "results/Detection/03_10epochs_416img/detect/03_10epochs_416img/weights/best.pt"
-video1_path = "data/raw/testing_videos/Cam3.mp4"
-video2_path = "data/raw/testing_videos/Cam4.mp4"
-output_json_path = "results/multi_view_detections_matched.json"
+input_json_path = "./multi_view_detections.json"
+video1_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam3.mp4"
+video2_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam4.mp4"
+output_json_path = "./multi_view_detections_matched.json"
+output_video_path = "./matching_visualization.avi"
 
-model = YOLO(model_path)
-cap1 = cv2.VideoCapture(video1_path)
-cap2 = cv2.VideoCapture(video2_path)
+# --- Load detection data ---
+print("📂 Loading detection data from JSON...")
+with open(input_json_path, "r") as f:
+    detection_data = json.load(f)
+
+metadata = detection_data["metadata"]
+frames_data = detection_data["frames"]
+
+w1, h1 = metadata["cam1"]["width"], metadata["cam1"]["height"]
+w2, h2 = metadata["cam2"]["width"], metadata["cam2"]["height"]
+fps = metadata["fps"]
+
+print(f"✅ Loaded {len(frames_data)} frames of detections")
+print(f"   Cam1: {w1}x{h1}, Cam2: {w2}x{h2}, FPS: {fps}")
 
 # --- Helper functions ---
 def clamp_bbox(bbox, max_width, max_height):
@@ -50,7 +62,7 @@ def match_detections(cam1_dets, cam2_dets, w1, h1, w2, h2, threshold=0.3):
     cost_matrix = np.zeros((len(cam1_dets), len(cam2_dets)))
     for i, det1 in enumerate(cam1_dets):
         for j, det2 in enumerate(cam2_dets):
-            if det1['class'] != det2['class']:
+            if det1['class_id'] != det2['class_id']:
                 cost_matrix[i, j] = 0
             else:
                 cost_matrix[i, j] = compute_similarity(det1['bbox'], det2['bbox'], w1, h1, w2, h2)
@@ -59,89 +71,175 @@ def match_detections(cam1_dets, cam2_dets, w1, h1, w2, h2, threshold=0.3):
     matches = [(i, j, 1-cost_matrix[i,j]) for i,j in zip(row_ind, col_ind) if 1-cost_matrix[i,j]>=threshold]
     return matches
 
-# --- Frame processing & matching ---
-#offset_frames = 28
-#for _ in range(offset_frames):
-#    ret, _ = cap2.read()
-#    if not ret:
-#        break
+def draw_matches(frame1, frame2, matched_objects, colors):
+    vis_frame1 = frame1.copy()
+    vis_frame2 = frame2.copy()
+    
+    for obj in matched_objects:
+        obj_id = obj["id"]
+        color = colors.get(obj_id, (255, 255, 255))
+        class_name = obj["class_name"]
+        
+        if obj["cam1_bbox"]:
+            x1, y1, x2, y2 = map(int, obj["cam1_bbox"])
+            cv2.rectangle(vis_frame1, (x1, y1), (x2, y2), color, 2)
+            label = f"ID:{obj_id} {class_name}"
+            cv2.putText(vis_frame1, label, (x1, y1 - 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+        if obj["cam2_bbox"]:
+            x1, y1, x2, y2 = map(int, obj["cam2_bbox"])
+            cv2.rectangle(vis_frame2, (x1, y1), (x2, y2), color, 2)
+            label = f"ID:{obj_id} {class_name}"
+            cv2.putText(vis_frame2, label, (x1, y1 - 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+    
+    return vis_frame1, vis_frame2
+
+# --- Open videos for visualization ---
+cap1 = cv2.VideoCapture(video1_path)
+cap2 = cv2.VideoCapture(video2_path)
+
+if not cap1.isOpened() or not cap2.isOpened():
+    print("❌ Error: Cannot open video(s).")
+    exit()
 
 matched_data = []
-frame_num = 0
 next_object_id = 1
 
-while True:
+random.seed(42)
+colors = {}
+
+out = None
+
+print("🎬 Processing and matching detections from JSON...")
+
+for frame_idx, frame_info in enumerate(frames_data):
     ret1, frame1 = cap1.read()
     ret2, frame2 = cap2.read()
     if not ret1 or not ret2:
         break
 
-    results1 = model(frame1)[0]
-    results2 = model(frame2)[0]
+    frame_num = frame_info["frame"]
+    cam1_dets = frame_info["cam1"]
+    cam2_dets = frame_info["cam2"]
 
-    cam1_dets = [{"bbox": clamp_bbox(bbox, frame1.shape[1], frame1.shape[0]),
-                  "conf": float(conf), "class": int(cls)}
-                 for bbox, conf, cls in zip(results1.boxes.xyxy.tolist(),
-                                             results1.boxes.conf.tolist(),
-                                             results1.boxes.cls.tolist())
-                 if bbox[2] > bbox[0] and bbox[3] > bbox[1]]
+    # Clamp bboxes to frame dimensions
+    for det in cam1_dets:
+        det["bbox"] = clamp_bbox(det["bbox"], w1, h1)
+    for det in cam2_dets:
+        det["bbox"] = clamp_bbox(det["bbox"], w2, h2)
 
-    cam2_dets = [{"bbox": clamp_bbox(bbox, frame2.shape[1], frame2.shape[0]),
-                  "conf": float(conf), "class": int(cls)}
-                 for bbox, conf, cls in zip(results2.boxes.xyxy.tolist(),
-                                             results2.boxes.conf.tolist(),
-                                             results2.boxes.cls.tolist())
-                 if bbox[2] > bbox[0] and bbox[3] > bbox[1]]
-
-    matches = match_detections(cam1_dets, cam2_dets, frame1.shape[1], frame1.shape[0], frame2.shape[1], frame2.shape[0])
+    matches = match_detections(cam1_dets, cam2_dets, w1, h1, w2, h2)
 
     matched_objects = []
     matched_cam1 = set()
     matched_cam2 = set()
 
-    for i,j,sim in matches:
+    for i, j, sim in matches:
         matched_objects.append({
             "id": next_object_id,
-            "class": cam1_dets[i]["class"],
+            "class_id": cam1_dets[i]["class_id"],
+            "class_name": cam1_dets[i]["class_name"],
             "cam1_bbox": cam1_dets[i]["bbox"],
             "cam2_bbox": cam2_dets[j]["bbox"],
-            "confidence": (cam1_dets[i]["conf"]+cam2_dets[j]["conf"])/2,
-            "match_score": sim
+            "confidence": (cam1_dets[i]["confidence"] + cam2_dets[j]["confidence"]) / 2,
+            "match_score": float(sim)
         })
         matched_cam1.add(i)
         matched_cam2.add(j)
+        
+        if next_object_id not in colors:
+            colors[next_object_id] = (random.randint(0, 255), 
+                                     random.randint(0, 255), 
+                                     random.randint(0, 255))
+        
         next_object_id += 1
 
     for i, det in enumerate(cam1_dets):
         if i not in matched_cam1:
             matched_objects.append({
                 "id": next_object_id,
-                "class": det["class"],
+                "class_id": det["class_id"],
+                "class_name": det["class_name"],
                 "cam1_bbox": det["bbox"],
                 "cam2_bbox": None,
-                "confidence": det["conf"],
+                "confidence": det["confidence"],
                 "match_score": 0.0
             })
+            
+            if next_object_id not in colors:
+                colors[next_object_id] = (128, 128, 128)
+            
             next_object_id += 1
 
     for j, det in enumerate(cam2_dets):
         if j not in matched_cam2:
             matched_objects.append({
                 "id": next_object_id,
-                "class": det["class"],
+                "class_id": det["class_id"],
+                "class_name": det["class_name"],
                 "cam1_bbox": None,
                 "cam2_bbox": det["bbox"],
-                "confidence": det["conf"],
+                "confidence": det["confidence"],
                 "match_score": 0.0
             })
+            
+            if next_object_id not in colors:
+                colors[next_object_id] = (128, 128, 128)
+            
             next_object_id += 1
 
     matched_data.append({"frame": frame_num, "objects": matched_objects})
-    frame_num += 1
+    
+    vis_frame1, vis_frame2 = draw_matches(frame1, frame2, matched_objects, colors)
+    
+    h = min(vis_frame1.shape[0], vis_frame2.shape[0])
+    vis_frame1_resized = cv2.resize(vis_frame1, (int(vis_frame1.shape[1] * h / vis_frame1.shape[0]), h))
+    vis_frame2_resized = cv2.resize(vis_frame2, (int(vis_frame2.shape[1] * h / vis_frame2.shape[0]), h))
+    combined = cv2.hconcat([vis_frame1_resized, vis_frame2_resized])
+    
+    num_matched = sum(1 for obj in matched_objects if obj["cam1_bbox"] and obj["cam2_bbox"])
+    info = f"Frame: {frame_num} | Matched: {num_matched} | Cam1 only: {len(cam1_dets)-len(matched_cam1)} | Cam2 only: {len(cam2_dets)-len(matched_cam2)}"
+    cv2.putText(combined, info, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    
+    if out is None:
+        height, width = combined.shape[:2]
+        out = cv2.VideoWriter(
+            output_video_path, 
+            cv2.VideoWriter_fourcc(*'XVID'), 
+            fps / 2,  # 2× slower
+            (width, height)
+        )
+    
+    out.write(combined)
+    
+    display_frame = cv2.resize(combined, (1280, 480))
+    cv2.imshow("Matching Visualization (Press 'q' to close)", display_frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        cv2.destroyAllWindows()
+    
+    if frame_idx % 50 == 0:
+        print(f"  Frame {frame_num}: {num_matched} matched, {len(matched_objects)} total objects")
 
 with open(output_json_path, "w") as f:
     json.dump(matched_data, f, indent=2)
 
 cap1.release()
 cap2.release()
-print(f"✅ Matched detections saved to {output_json_path}")
+if out:
+    out.release()
+cv2.destroyAllWindows()
+
+print(f"\n✅ Matched detections saved to {output_json_path}")
+print(f"✅ Visualization saved to {output_video_path}")
+print(f"   Total frames: {len(matched_data)}")
+
+total_matched = sum(1 for frame in matched_data 
+                   for obj in frame["objects"] 
+                   if obj["cam1_bbox"] and obj["cam2_bbox"])
+total_objects = sum(len(frame["objects"]) for frame in matched_data)
+print(f"\n📊 Matching statistics:")
+print(f"   Total objects: {total_objects}")
+print(f"   Matched across cameras: {total_matched}")
+print(f"   Match rate: {total_matched/total_objects*100:.1f}%")

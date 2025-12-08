@@ -1,16 +1,24 @@
 import cv2
 import json
 import random
+import numpy as np
 from deep_sort_realtime.deepsort_tracker import DeepSort
 
 # --- Paths ---
-matched_json_path = "results/multi_view_detections_matched.json"
-tracked_json_path = "results/multi_view_tracked_objects.json"
-video1_path = "data/raw/testing_videos/Cam3.mp4"
-video2_path = "data/raw/testing_videos/Cam4.mp4"
-output_video_path = "results/multi_view_1st_tracked_visualization.avi"
+matched_json_path = "./multi_view_detections_matched.json"
+tracked_json_path = "./multi_view_tracked_objects.json"
+video1_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam3.mp4"
+video2_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam4.mp4"
+output_video_path = "./multi_view_5th_tracked_visualization.avi"
+
+# Class mapping
+CLASS_NAMES = {
+    0: "person",
+    1: "car"
+}
 
 # --- Load matched detections ---
+print("📂 Loading matched detections...")
 with open(matched_json_path, "r") as f:
     matched_data = json.load(f)
 
@@ -18,6 +26,7 @@ with open(matched_json_path, "r") as f:
 cap_temp = cv2.VideoCapture(video1_path)
 cam1_width = int(cap_temp.get(cv2.CAP_PROP_FRAME_WIDTH))
 cam1_height = int(cap_temp.get(cv2.CAP_PROP_FRAME_HEIGHT))
+fps = int(cap_temp.get(cv2.CAP_PROP_FPS))
 cap_temp.release()
 
 cap_temp = cv2.VideoCapture(video2_path)
@@ -25,10 +34,68 @@ cam2_width = int(cap_temp.get(cv2.CAP_PROP_FRAME_WIDTH))
 cam2_height = int(cap_temp.get(cv2.CAP_PROP_FRAME_HEIGHT))
 cap_temp.release()
 
-print(f"📐 Cam1: {cam1_width}x{cam1_height}, Cam2: {cam2_width}x{cam2_height}")
+print(f"📐 Cam1: {cam1_width}x{cam1_height}, Cam2: {cam2_width}x{cam2_height}, FPS: {fps}")
 
-# --- Initialize DeepSORT ---
-tracker = DeepSort(max_age=30)
+# --- Initialize TWO DeepSORT trackers (one per camera) ---
+tracker_cam1 = DeepSort(
+    max_age=30,
+    n_init=3,
+    max_iou_distance=0.7,
+    max_cosine_distance=0.4,
+    nn_budget=100
+)
+
+tracker_cam2 = DeepSort(
+    max_age=30,
+    n_init=3,
+    max_iou_distance=0.7,
+    max_cosine_distance=0.4,
+    nn_budget=100
+)
+
+# --- Global ID management ---
+class GlobalIDManager:
+    def __init__(self):
+        self.cam1_to_global = {}  # cam1_track_id -> global_id
+        self.cam2_to_global = {}  # cam2_track_id -> global_id
+        self.next_global_id = 1
+        self.global_id_history = {}  # global_id -> {"cam1_ids": set(), "cam2_ids": set()}
+    
+    def get_or_create_global_id(self, cam1_id, cam2_id):
+        """
+        Match cam1 and cam2 track IDs to a single global ID
+        """
+        global_id = None
+        
+        # Check if either camera ID already has a global ID
+        if cam1_id and cam1_id in self.cam1_to_global:
+            global_id = self.cam1_to_global[cam1_id]
+        elif cam2_id and cam2_id in self.cam2_to_global:
+            global_id = self.cam2_to_global[cam2_id]
+        
+        # Create new global ID if none exists
+        if global_id is None:
+            global_id = self.next_global_id
+            self.next_global_id += 1
+            self.global_id_history[global_id] = {"cam1_ids": set(), "cam2_ids": set()}
+        
+        # Associate camera IDs with global ID
+        if cam1_id:
+            self.cam1_to_global[cam1_id] = global_id
+            self.global_id_history[global_id]["cam1_ids"].add(cam1_id)
+        if cam2_id:
+            self.cam2_to_global[cam2_id] = global_id
+            self.global_id_history[global_id]["cam2_ids"].add(cam2_id)
+        
+        return global_id
+    
+    def get_global_id_for_cam1(self, cam1_id):
+        return self.cam1_to_global.get(cam1_id)
+    
+    def get_global_id_for_cam2(self, cam2_id):
+        return self.cam2_to_global.get(cam2_id)
+
+id_manager = GlobalIDManager()
 
 # --- Colors ---
 random.seed(42)
@@ -36,117 +103,207 @@ colors = {}
 
 tracked_data_output = []
 
-print("\n🔍 Running DeepSORT tracking on matched detections...")
+print("\n🔍 Running dual-camera DeepSORT tracking...")
 
-# Read Cam1 frames for ReID
+# Open both video captures for ReID
 cap1 = cv2.VideoCapture(video1_path)
+cap2 = cv2.VideoCapture(video2_path)
 
-# --- Reduce FPS / skip frames to save memory ---
-frame_skip = 1  # process every frame, increase if memory issues
+# --- Helper function for IoU ---
+def compute_iou(box1, box2):
+    x1_1, y1_1, x2_1, y2_1 = box1
+    x1_2, y1_2, x2_2, y2_2 = box2
+    
+    xi1 = max(x1_1, x1_2)
+    yi1 = max(y1_1, y1_2)
+    xi2 = min(x2_1, x2_2)
+    yi2 = min(y2_1, y2_2)
+    
+    inter = max(0, xi2 - xi1) * max(0, yi2 - yi1)
+    area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+    area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+    union = area1 + area2 - inter
+    
+    return inter / union if union > 0 else 0
 
+# --- Process frames ---
 for frame_num, frame_info in enumerate(matched_data):
-    ret, frame_cam1 = cap1.read()
-    if not ret:
-        print("⚠️ End of Cam1 video.")
+    ret1, frame_cam1 = cap1.read()
+    ret2, frame_cam2 = cap2.read()
+    
+    if not ret1 or not ret2:
+        print("⚠️ End of video.")
         break
 
-    if frame_num % frame_skip != 0:
-        continue
-
-    # Optional: downscale to reduce memory
-    frame_cam1 = cv2.resize(frame_cam1, (cam1_width//2, cam1_height//2))
-    scale_x = cam1_width / frame_cam1.shape[1]
-    scale_y = cam1_height / frame_cam1.shape[0]
-
     objects = frame_info["objects"]
-    detections = []
-    object_map = []
-
+    
+    # Separate detections for each camera
+    cam1_detections = []
+    cam2_detections = []
+    cam1_object_map = []
+    cam2_object_map = []
+    
     for obj in objects:
-        # Only track classes 0=person, 1=car, 2=bus
-        if obj.get("class") not in [0, 1, 2]:
-            continue
-
-        bbox = obj.get("cam1_bbox")
-        if not bbox or len(bbox) != 4:
-            continue
-
-        x1, y1, x2, y2 = map(int, bbox)
-        # scale down bbox
-        x1 = int(x1 / scale_x)
-        y1 = int(y1 / scale_y)
-        x2 = int(x2 / scale_x)
-        y2 = int(y2 / scale_y)
-
-        if x2 <= x1 or y2 <= y1:
-            continue
-
+        class_id = obj.get("class_id", 0)
         conf = obj.get("confidence", 0.9)
-        detections.append(([x1, y1, x2 - x1, y2 - y1], conf, obj.get("class")))
-        object_map.append(obj)
-
-    tracks = tracker.update_tracks(detections, frame=frame_cam1)
-    tracked_objects = []
-
-    for t in tracks:
-        if not t.is_confirmed():
+        
+        if conf < 0.5 or class_id not in [0, 1]:
             continue
-        track_id = t.track_id
-        l, t1, r, b = t.to_ltrb()
-        tracker_bbox = [int(l), int(t1), int(r), int(b)]
-
-        # Match with original using IoU
-        best_match_obj = None
-        best_iou = 0
-        for obj in object_map:
-            ox1, oy1, ox2, oy2 = obj["cam1_bbox"]
-            # scale down original bbox
-            ox1 = int(ox1 / scale_x)
-            oy1 = int(oy1 / scale_y)
-            ox2 = int(ox2 / scale_x)
-            oy2 = int(oy2 / scale_y)
-
-            xi1 = max(l, ox1)
-            yi1 = max(t1, oy1)
-            xi2 = min(r, ox2)
-            yi2 = min(b, oy2)
-
-            inter = max(0, xi2 - xi1) * max(0, yi2 - yi1)
-            area1 = (r - l) * (b - t1)
-            area2 = (ox2 - ox1) * (oy2 - oy1)
-            union = area1 + area2 - inter
-            iou = inter / union if union > 0 else 0
-
-            if iou > best_iou:
-                best_iou = iou
-                best_match_obj = obj
-
-        if best_iou > 0.3 and best_match_obj:
-            cam1_bbox = best_match_obj["cam1_bbox"]
-            cam2_bbox = best_match_obj.get("cam2_bbox")
-        else:
-            cam1_bbox = tracker_bbox
-            cam2_bbox = None
-
+        
+        # Cam1 detections
+        bbox1 = obj.get("cam1_bbox")
+        if bbox1 and len(bbox1) == 4:
+            x1, y1, x2, y2 = map(int, bbox1)
+            if x2 > x1 and y2 > y1:
+                cam1_detections.append(([x1, y1, x2 - x1, y2 - y1], conf, class_id))
+                cam1_object_map.append(obj)
+        
+        # Cam2 detections
+        bbox2 = obj.get("cam2_bbox")
+        if bbox2 and len(bbox2) == 4:
+            x1, y1, x2, y2 = map(int, bbox2)
+            if x2 > x1 and y2 > y1:
+                cam2_detections.append(([x1, y1, x2 - x1, y2 - y1], conf, class_id))
+                cam2_object_map.append(obj)
+    
+    # Update both trackers
+    tracks_cam1 = tracker_cam1.update_tracks(cam1_detections, frame=frame_cam1)
+    tracks_cam2 = tracker_cam2.update_tracks(cam2_detections, frame=frame_cam2)
+    
+    # Build track dictionaries
+    cam1_tracks_dict = {}
+    for t in tracks_cam1:
+        if t.is_confirmed():
+            l, t1, r, b = t.to_ltrb()
+            cam1_tracks_dict[t.track_id] = {
+                "bbox": [int(l), int(t1), int(r), int(b)],
+                "class_id": t.get_det_class() if hasattr(t, 'get_det_class') else 0
+            }
+    
+    cam2_tracks_dict = {}
+    for t in tracks_cam2:
+        if t.is_confirmed():
+            l, t1, r, b = t.to_ltrb()
+            cam2_tracks_dict[t.track_id] = {
+                "bbox": [int(l), int(t1), int(r), int(b)],
+                "class_id": t.get_det_class() if hasattr(t, 'get_det_class') else 0
+            }
+    
+    # Match tracks to original matched objects
+    tracked_objects = []
+    processed_cam1_ids = set()
+    processed_cam2_ids = set()
+    
+    # Process matched objects (objects with both cam1 and cam2 bboxes)
+    for obj in objects:
+        if not obj.get("cam1_bbox") or not obj.get("cam2_bbox"):
+            continue
+        
+        cam1_bbox = obj["cam1_bbox"]
+        cam2_bbox = obj["cam2_bbox"]
+        
+        # Find best matching track in cam1
+        best_cam1_id = None
+        best_cam1_iou = 0
+        for track_id, track_data in cam1_tracks_dict.items():
+            if track_id in processed_cam1_ids:
+                continue
+            iou = compute_iou(cam1_bbox, track_data["bbox"])
+            if iou > best_cam1_iou:
+                best_cam1_iou = iou
+                best_cam1_id = track_id
+        
+        # Find best matching track in cam2
+        best_cam2_id = None
+        best_cam2_iou = 0
+        for track_id, track_data in cam2_tracks_dict.items():
+            if track_id in processed_cam2_ids:
+                continue
+            iou = compute_iou(cam2_bbox, track_data["bbox"])
+            if iou > best_cam2_iou:
+                best_cam2_iou = iou
+                best_cam2_id = track_id
+        
+        # Only proceed if we have at least one good match
+        if (best_cam1_iou > 0.3 or best_cam2_iou > 0.3):
+            # Get or create global ID
+            global_id = id_manager.get_or_create_global_id(
+                best_cam1_id if best_cam1_iou > 0.3 else None,
+                best_cam2_id if best_cam2_iou > 0.3 else None
+            )
+            
+            tracked_objects.append({
+                "id": global_id,
+                "cam1_bbox": cam1_bbox,
+                "cam2_bbox": cam2_bbox,
+                "class_id": obj.get("class_id", 0),
+                "class_name": obj.get("class_name", "unknown"),
+                "cam1_track_id": best_cam1_id,
+                "cam2_track_id": best_cam2_id
+            })
+            
+            if best_cam1_id and best_cam1_iou > 0.3:
+                processed_cam1_ids.add(best_cam1_id)
+            if best_cam2_id and best_cam2_iou > 0.3:
+                processed_cam2_ids.add(best_cam2_id)
+            
+            if global_id not in colors:
+                colors[global_id] = [random.randint(0, 255) for _ in range(3)]
+    
+    # Process cam1-only tracks
+    for track_id, track_data in cam1_tracks_dict.items():
+        if track_id in processed_cam1_ids:
+            continue
+        
+        global_id = id_manager.get_global_id_for_cam1(track_id)
+        if global_id is None:
+            global_id = id_manager.get_or_create_global_id(track_id, None)
+        
         tracked_objects.append({
-            "id": track_id,
-            "cam1_bbox": cam1_bbox,
-            "cam2_bbox": cam2_bbox,
-            "class": obj.get("class")
+            "id": global_id,
+            "cam1_bbox": track_data["bbox"],
+            "cam2_bbox": None,
+            "class_id": track_data["class_id"],
+            "class_name": CLASS_NAMES.get(track_data["class_id"], "unknown"),
+            "cam1_track_id": track_id,
+            "cam2_track_id": None
         })
-
-        if track_id not in colors:
-            colors[track_id] = [random.randint(0, 255) for _ in range(3)]
-
+        
+        if global_id not in colors:
+            colors[global_id] = [128, 128, 128]
+    
+    # Process cam2-only tracks
+    for track_id, track_data in cam2_tracks_dict.items():
+        if track_id in processed_cam2_ids:
+            continue
+        
+        global_id = id_manager.get_global_id_for_cam2(track_id)
+        if global_id is None:
+            global_id = id_manager.get_or_create_global_id(None, track_id)
+        
+        tracked_objects.append({
+            "id": global_id,
+            "cam1_bbox": None,
+            "cam2_bbox": track_data["bbox"],
+            "class_id": track_data["class_id"],
+            "class_name": CLASS_NAMES.get(track_data["class_id"], "unknown"),
+            "cam1_track_id": None,
+            "cam2_track_id": track_id
+        })
+        
+        if global_id not in colors:
+            colors[global_id] = [128, 128, 128]
+    
     tracked_data_output.append({
         "frame": frame_num,
         "objects": tracked_objects
     })
-
+    
     if frame_num % 50 == 0:
-        print(f"  Frame {frame_num}, objects: {len(tracked_objects)}")
+        print(f"  Frame {frame_num}: {len(tracked_objects)} tracked objects")
 
 cap1.release()
+cap2.release()
 
 # --- Save tracked JSON ---
 with open(tracked_json_path, "w") as f:
@@ -161,13 +318,12 @@ print(f"\n✅ Tracked objects saved to {tracked_json_path}")
 cap1 = cv2.VideoCapture(video1_path)
 cap2 = cv2.VideoCapture(video2_path)
 
-fps = 10
+output_fps = max(1, fps // 2)  # 2x slower
+
 out = None
 frame_num = 0
-last_bboxes_cam1 = {}
-last_bboxes_cam2 = {}
 
-print("\n🎬 Creating live visualization...")
+print("\n🎬 Creating visualization...")
 
 while True:
     ret1, frame1 = cap1.read()
@@ -179,46 +335,64 @@ while True:
 
     for obj in frame_info["objects"]:
         obj_id = obj["id"]
-        color = colors[obj_id]
+        color = tuple(colors[obj_id])
+        class_name = obj.get("class_name", "unknown")
 
         # --- CAM1 ---
         if obj.get("cam1_bbox") and len(obj["cam1_bbox"]) == 4:
             try:
                 x1, y1, x2, y2 = map(int, obj["cam1_bbox"])
-                last_bboxes_cam1[obj_id] = (x1, y1, x2, y2)
                 cv2.rectangle(frame1, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame1, str(obj_id), (x1, y1 - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-            except Exception as e:
-                print(f"⚠️ Skipping CAM1 bbox for object {obj_id}: {obj['cam1_bbox']} - {e}")
+
+                label = f"ID:{obj_id} {class_name}"
+                (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                cv2.rectangle(frame1, (x1, y1 - text_h - 10), (x1 + text_w, y1), color, -1)
+                cv2.putText(frame1, label, (x1, y1 - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            except:
+                pass
 
         # --- CAM2 ---
         if obj.get("cam2_bbox") and len(obj["cam2_bbox"]) == 4:
             try:
                 x1, y1, x2, y2 = map(int, obj["cam2_bbox"])
-                last_bboxes_cam2[obj_id] = (x1, y1, x2, y2)
                 cv2.rectangle(frame2, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame2, str(obj_id), (x1, y1 - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-            except Exception as e:
-                print(f"⚠️ Skipping CAM2 bbox for object {obj_id}: {obj['cam2_bbox']} - {e}")
 
-    # Resize both to same height
+                label = f"ID:{obj_id} {class_name}"
+                (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                cv2.rectangle(frame2, (x1, y1 - text_h - 10), (x1 + text_w, y1), color, -1)
+                cv2.putText(frame2, label, (x1, y1 - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            except:
+                pass
+
+    # Combine frames
     h = min(frame1.shape[0], frame2.shape[0])
-    frame1 = cv2.resize(frame1, (int(frame1.shape[1] * h / frame1.shape[0]), h))
-    frame2 = cv2.resize(frame2, (int(frame2.shape[1] * h / frame2.shape[0]), h))
+    frame1_resized = cv2.resize(frame1, (int(frame1.shape[1] * h / frame1.shape[0]), h))
+    frame2_resized = cv2.resize(frame2, (int(frame2.shape[1] * h / frame2.shape[0]), h))
+    combined = cv2.hconcat([frame1_resized, frame2_resized])
 
-    combined = cv2.hconcat([frame1, frame2])
+    # Count objects in each view
+    cam1_count = sum(1 for obj in frame_info["objects"] if obj.get("cam1_bbox"))
+    cam2_count = sum(1 for obj in frame_info["objects"] if obj.get("cam2_bbox"))
+    both_count = sum(1 for obj in frame_info["objects"] if obj.get("cam1_bbox") and obj.get("cam2_bbox"))
+    
+    info_text = f"Frame: {frame_num} | Total: {len(frame_info['objects'])} | Both views: {both_count} | Cam1: {cam1_count} | Cam2: {cam2_count}"
+    cv2.putText(combined, info_text, (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     if out is None:
         height, width = combined.shape[:2]
         out = cv2.VideoWriter(output_video_path,
                               cv2.VideoWriter_fourcc(*'XVID'),
-                              fps, (width, height))
+                              output_fps, (width, height))
 
     out.write(combined)
-    cv2.imshow("Multi-View Tracked Objects", combined)
+
+    display_frame = cv2.resize(combined, (1280, 480))
+    cv2.imshow("Multi-Camera Tracking (Press 'q' to close)", display_frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
+        cv2.destroyAllWindows()
         break
 
     frame_num += 1
@@ -229,4 +403,18 @@ if out:
     out.release()
 cv2.destroyAllWindows()
 
-print(f"✅ Tracked video saved to {output_video_path}")
+print(f"\n✅ Video saved to {output_video_path}")
+
+# Statistics
+unique_ids = set(obj["id"] for frame in tracked_data_output for obj in frame["objects"])
+total_both_views = sum(1 for frame in tracked_data_output 
+                      for obj in frame["objects"] 
+                      if obj.get("cam1_bbox") and obj.get("cam2_bbox"))
+total_objects = sum(len(frame["objects"]) for frame in tracked_data_output)
+
+print(f"\n📊 Tracking statistics:")
+print(f"   Unique tracked IDs: {len(unique_ids)}")
+print(f"   Frames processed: {len(tracked_data_output)}")
+print(f"   Total object instances: {total_objects}")
+print(f"   Objects visible in both cameras: {total_both_views} ({total_both_views/total_objects*100:.1f}%)")
+print(f"   Average objects per frame: {total_objects / len(tracked_data_output):.1f}")
