@@ -75,5 +75,33 @@ After training, use the best weights to detect and track objects across camera v
     python scripts/5_track_matched.py
     ```
 
+## Demo Playbook
+
+Keep these commands handy for tomorrow's presentation so you can jump between pre-recorded and live feeds without editing any scripts.
+
+### Dual-Video Playback (Cam3 + Cam4)
+
+```bash
+python scripts/3_save_detection.py \
+  --model demo_material/yolov8m_best.pt \
+  --video1 data/raw/testing_videos/Cam3.mp4 \
+  --video2 data/raw/testing_videos/Cam4.mp4 \
+  --out_json demo_material/demo_cam34.json \
+  --out_video demo_material/demo_cam34.avi \
+  --imgsz 960 --conf 0.35 --iou 0.5 --slowdown 1
+```
+
+* `--imgsz 960` matches training resolution for tighter boxes.
+* `--conf`/`--iou` can be nudged on the fly (e.g., `--conf 0.45` if you see flicker).
+* Set `--slowdown 2` if you prefer a slower side-by-side playback.
+
+### Live Camera Sanity Check
+
+```bash
+yolo predict model=demo_material/yolov8m_best.pt source=0 show=True conf=0.35
+```
+
+Run it once per camera ID (`source=1`, `source=2`, …) to verify the lab hardware before switching to your dual-camera helper or the script above.
+
 ## Experiments
 Detailed logs of data leakage issues and class imbalance experiments can be found in `docs/results.md`.

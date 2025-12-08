@@ -11,6 +11,10 @@ parser.add_argument("--video1", type=str, default="data/raw/testing_videos/Cam3.
 parser.add_argument("--video2", type=str, default="data/raw/testing_videos/Cam4.mp4", help="Path to second video")
 parser.add_argument("--out_json", type=str, default="./multi_view_detections.json", help="Output JSON path")
 parser.add_argument("--out_video", type=str, default="./detection_visualization.avi", help="Output video path")
+parser.add_argument("--imgsz", type=int, default=960, help="Inference image size (matches 960 training resolution)")
+parser.add_argument("--conf", type=float, default=0.35, help="Confidence threshold for YOLO inference")
+parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold for YOLO NMS")
+parser.add_argument("--slowdown", type=float, default=2.0, help="Slowdown factor for output FPS (1 keeps realtime)")
 args = parser.parse_args()
 
 model_path = args.model
@@ -18,6 +22,10 @@ video1_path = args.video1
 video2_path = args.video2
 output_json_path = args.out_json
 output_video_path = args.out_video
+img_size = max(320, args.imgsz)
+conf_thres = max(0.01, min(0.99, args.conf))
+iou_thres = max(0.1, min(0.99, args.iou))
+slowdown_factor = max(0.5, args.slowdown)
 
 print(f"Model: {model_path}")
 print(f"Video 1: {video1_path}")
@@ -30,7 +38,19 @@ CLASS_NAMES = {
 }
 
 # Slowdown factor (slower video)
-SLOWDOWN_FACTOR = 2
+SLOWDOWN_FACTOR = slowdown_factor
+
+
+def clip_bbox(bbox, width, height):
+    """Clip a bbox to frame limits and drop degenerate boxes."""
+    x1, y1, x2, y2 = map(int, bbox)
+    x1 = max(0, min(width - 1, x1))
+    y1 = max(0, min(height - 1, y1))
+    x2 = max(0, min(width - 1, x2))
+    y2 = max(0, min(height - 1, y2))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return x1, y1, x2, y2
 
 model = YOLO(model_path)
 
@@ -78,8 +98,8 @@ while True:
     vis_frame1 = frame1.copy()
     vis_frame2 = frame2.copy()
 
-    results1 = model(frame1)[0]
-    results2 = model(frame2)[0]
+    results1 = model(frame1, imgsz=img_size, conf=conf_thres, iou=iou_thres, verbose=False)[0]
+    results2 = model(frame2, imgsz=img_size, conf=conf_thres, iou=iou_thres, verbose=False)[0]
 
     cam1_dets = []
     for bbox, conf, cls in zip(results1.boxes.xyxy.tolist(),
@@ -88,14 +108,18 @@ while True:
         class_id = int(cls)
         class_name = CLASS_NAMES.get(class_id, f"class_{class_id}")
 
+        clipped_box = clip_bbox(bbox, width1, height1)
+        if not clipped_box:
+            continue
+
         cam1_dets.append({
-            "bbox": bbox,
+            "bbox": list(map(int, clipped_box)),
             "confidence": float(conf),
             "class_id": class_id,
             "class_name": class_name
         })
 
-        x1, y1, x2, y2 = map(int, bbox)
+        x1, y1, x2, y2 = clipped_box
         color = (0, 255, 0) if class_name == "person" else (0, 0, 255)
         cv2.rectangle(vis_frame1, (x1, y1), (x2, y2), color, 2)
         cv2.putText(vis_frame1, f"{class_name} {conf:.2f}", (x1, y1 - 5),
@@ -108,14 +132,18 @@ while True:
         class_id = int(cls)
         class_name = CLASS_NAMES.get(class_id, f"class_{class_id}")
 
+        clipped_box = clip_bbox(bbox, width2, height2)
+        if not clipped_box:
+            continue
+
         cam2_dets.append({
-            "bbox": bbox,
+            "bbox": list(map(int, clipped_box)),
             "confidence": float(conf),
             "class_id": class_id,
             "class_name": class_name
         })
 
-        x1, y1, x2, y2 = map(int, bbox)
+        x1, y1, x2, y2 = clipped_box
         color = (0, 255, 0) if class_name == "person" else (0, 0, 255)
         cv2.rectangle(vis_frame2, (x1, y1), (x2, y2), color, 2)
         cv2.putText(vis_frame2, f"{class_name} {conf:.2f}", (x1, y1 - 5),
