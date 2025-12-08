@@ -1,12 +1,27 @@
 import cv2
 from ultralytics import YOLO
 import json
+import argparse
+import os
 
-model_path = "results/Detection_Balanced/yolov8n_balanced/weights/best.pt"
-video1_path = "data/raw/testing_videos/Cam3.mp4"
-video2_path = "data/raw/testing_videos/Cam4.mp4"
-output_json_path = "./multi_view_detections.json"
-output_video_path = "./detection_visualization.avi"
+# Parse arguments
+parser = argparse.ArgumentParser()
+parser.add_argument("--model", type=str, default="results/Detection_2Class/yolov8m_2class/weights/best.pt", help="Path to trained YOLO model")
+parser.add_argument("--video1", type=str, default="data/raw/testing_videos/Cam3.mp4", help="Path to first video")
+parser.add_argument("--video2", type=str, default="data/raw/testing_videos/Cam4.mp4", help="Path to second video")
+parser.add_argument("--out_json", type=str, default="./multi_view_detections.json", help="Output JSON path")
+parser.add_argument("--out_video", type=str, default="./detection_visualization.avi", help="Output video path")
+args = parser.parse_args()
+
+model_path = args.model
+video1_path = args.video1
+video2_path = args.video2
+output_json_path = args.out_json
+output_video_path = args.out_video
+
+print(f"Model: {model_path}")
+print(f"Video 1: {video1_path}")
+print(f"Video 2: {video2_path}")
 
 # Classes
 CLASS_NAMES = {
