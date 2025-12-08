@@ -2,9 +2,9 @@ import cv2
 from ultralytics import YOLO
 import json
 
-model_path = "/home/treenut/multi_view/Yolov8_Multi-view/Detection/05_44epochs_480img_size/weights/best.pt"
-video1_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam3.mp4"
-video2_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam4.mp4"
+model_path = "results/Detection_Balanced/yolov8n_balanced/weights/best.pt"
+video1_path = "data/raw/testing_videos/Cam3.mp4"
+video2_path = "data/raw/testing_videos/Cam4.mp4"
 output_json_path = "./multi_view_detections.json"
 output_video_path = "./detection_visualization.avi"
 

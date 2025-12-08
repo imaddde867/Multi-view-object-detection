@@ -7,8 +7,8 @@ from deep_sort_realtime.deepsort_tracker import DeepSort
 # --- Paths ---
 matched_json_path = "./multi_view_detections_matched.json"
 tracked_json_path = "./multi_view_tracked_objects.json"
-video1_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam3.mp4"
-video2_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam4.mp4"
+video1_path = "data/raw/testing_videos/Cam3.mp4"
+video2_path = "data/raw/testing_videos/Cam4.mp4"
 output_video_path = "./multi_view_5th_tracked_visualization.avi"
 
 # Class mapping

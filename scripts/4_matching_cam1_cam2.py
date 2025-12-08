@@ -5,8 +5,8 @@ from scipy.optimize import linear_sum_assignment
 import random
 
 input_json_path = "./multi_view_detections.json"
-video1_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam3.mp4"
-video2_path = "/home/treenut/multi_view/Yolov8_Multi-view/testing_videos/Cam4.mp4"
+video1_path = "data/raw/testing_videos/Cam3.mp4"
+video2_path = "data/raw/testing_videos/Cam4.mp4"
 output_json_path = "./multi_view_detections_matched.json"
 output_video_path = "./matching_visualization.avi"
 
