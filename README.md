@@ -72,8 +72,51 @@ After training, use the best weights to detect and track objects across camera v
     ```
 2.  **Run DeepSORT Tracking:**
     ```bash
-    python scripts/5_track_matched.py
-    ```
+python scripts/5_track_matched.py
+```
+
+## Immediate Fixes (Quick Wins)
+
+**Fix 1 – Aggressive Data Augmentation (`scripts/train_yolo.py`)**  
+Phone footage swings wildly in lighting, color balance, and motion blur, so the YOLO training call now injects heavy visual perturbations (HSV shifts, ±10° tilt, ±10% translations, 0.5 scale swings, 50% horizontal flips, mosaic/mixup/copy-paste, and light blur). The training block is:
+
+```python
+results = model.train(
+    data=dataset_path,
+    epochs=epochs,
+    imgsz=img_size,
+    batch=batch_size,
+    hsv_h=0.015,
+    hsv_s=0.7,
+    hsv_v=0.4,
+    degrees=10,
+    translate=0.1,
+    scale=0.5,
+    shear=0.0,
+    perspective=0.0005,
+    flipud=0.0,
+    fliplr=0.5,
+    mosaic=1.0,
+    mixup=0.1,
+    copy_paste=0.1,
+    blur=0.01,
+    patience=10,
+    device=device,
+)
+```
+
+**Fix 2 – Phone-Mode Detector (`scripts/3_save_detection.py`)**  
+Supply `--phone-mode` and the script switches to `detect_objects_phone_mode`, which lowers YOLO to `conf=0.25`/`iou=0.45`, keeps the same 960 px inference size, and reuses DeepSORT-friendly JSON exports. Use it whenever the inputs are handheld or low light:
+
+```bash
+python scripts/3_save_detection.py --phone-mode --video1 <phone_cam_A> --video2 <phone_cam_B>
+```
+
+**Fix 3 – Phone-Mode / Independent Matching (`scripts/4_matching_cam1_cam2.py`)**  
+Handheld captures break the old geometry-based matching, so two escape hatches now exist:
+
+1. `--phone-mode` (existing) switches to appearance/ReID matching with a tunable `--appearance-threshold`.
+2. `--independent-tracking` skips cross-camera matching entirely and hands out disjoint ID ranges (Cam1 → 1‑10000, Cam2 → 10001‑20000) so each stream can be narrated separately without spurious correspondences.
 
 ## Demo Playbook
 

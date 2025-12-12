@@ -21,6 +21,11 @@ parser.add_argument("--frame_stride", type=int, default=1, help="Process every N
 parser.add_argument("--skip_json", action="store_true", help="Skip JSON export for fastest turnaround")
 parser.add_argument("--device", type=str, default=None, help="Inference device override (e.g., cuda:0, mps, cpu)")
 parser.add_argument("--half", action="store_true", help="Use half precision (CUDA only) for faster inference")
+parser.add_argument(
+    "--phone-mode",
+    action="store_true",
+    help="Use lower thresholds for phone camera footage",
+)
 args = parser.parse_args()
 
 model_path = args.model
@@ -38,6 +43,7 @@ frame_stride = max(1, args.frame_stride)
 skip_json = args.skip_json
 device = args.device
 use_half = args.half
+phone_mode = args.phone_mode
 
 print(f"Model: {model_path}")
 print(f"Video 1: {video1_path}")
@@ -51,6 +57,24 @@ CLASS_NAMES = {
 
 # Slowdown factor (slower video)
 SLOWDOWN_FACTOR = slowdown_factor
+
+PHONE_CONF_THRESHOLD = 0.25
+PHONE_IOU_THRESHOLD = 0.45
+
+
+def detect_objects_phone_mode(model, frame, conf_threshold=0.25, iou_threshold=0.45):
+    """
+    Lower thresholds for phone camera footage.
+    EPFL dataset used conf=0.5, but phone cameras need more sensitivity.
+    """
+    results = model.predict(
+        source=frame,
+        conf=conf_threshold,
+        iou=iou_threshold,
+        verbose=False,
+        imgsz=img_size,
+    )
+    return results[0]
 
 
 def clip_bbox(bbox, width, height):
@@ -131,6 +155,11 @@ input_fps = max(1, input_fps)
 processing_fps = max(1, int(input_fps / frame_stride))
 output_fps = max(1, int(max(1, processing_fps) / SLOWDOWN_FACTOR))
 
+if phone_mode:
+    print(
+        f"📱 Phone camera mode enabled (conf={PHONE_CONF_THRESHOLD}, iou={PHONE_IOU_THRESHOLD})"
+    )
+
 print(f"🎥 Input FPS: {input_fps}")
 print(f"📉 Frame stride: {frame_stride} (processing {processing_fps} FPS)")
 print(f"🐌 Output FPS (slowed): {output_fps}")
@@ -165,8 +194,22 @@ while True:
     vis_frame1 = frame1.copy()
     vis_frame2 = frame2.copy()
 
-    results1 = model(frame1, imgsz=img_size, conf=conf_thres, iou=iou_thres, verbose=False)[0]
-    results2 = model(frame2, imgsz=img_size, conf=conf_thres, iou=iou_thres, verbose=False)[0]
+    if phone_mode:
+        results1 = detect_objects_phone_mode(
+            model,
+            frame1,
+            conf_threshold=PHONE_CONF_THRESHOLD,
+            iou_threshold=PHONE_IOU_THRESHOLD,
+        )
+        results2 = detect_objects_phone_mode(
+            model,
+            frame2,
+            conf_threshold=PHONE_CONF_THRESHOLD,
+            iou_threshold=PHONE_IOU_THRESHOLD,
+        )
+    else:
+        results1 = model(frame1, imgsz=img_size, conf=conf_thres, iou=iou_thres, verbose=False)[0]
+        results2 = model(frame2, imgsz=img_size, conf=conf_thres, iou=iou_thres, verbose=False)[0]
 
     cam1_dets = []
     for bbox, conf, cls in zip(results1.boxes.xyxy.tolist(),
