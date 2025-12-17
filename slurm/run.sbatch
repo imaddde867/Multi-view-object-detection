@@ -11,6 +11,7 @@
 set -euo pipefail
 
 module purge || true
+module load pytorch/2.7 || true
 
 python -V
 nvidia-smi || true

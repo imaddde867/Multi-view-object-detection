@@ -11,6 +11,7 @@
 set -euo pipefail
 
 module purge || true
+module load pytorch/2.7 || true
 
 python -V
 nvidia-smi || true
@@ -22,6 +23,9 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 if [[ -f ".venv/bin/activate" ]]; then
   source .venv/bin/activate
 fi
+
+# If using HuggingFace-based checkpoints, keep cache in scratch.
+export HF_HOME="${HF_HOME:-/scratch/project_2015432/exp/.hf}"
 
 # Label videos with YOLO proposals + SAM3 refinement.
 # Edit `config/labeling.yaml` and set `sam3.checkpoint` (or pass --sam3-checkpoint).
