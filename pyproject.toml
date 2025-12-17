@@ -20,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 tracking = [
   "torch",
+  "torchvision",
 ]
 sam3 = [
   # SAM3 is not published on PyPI; install from source per docs.
@@ -31,4 +32,3 @@ mvot = "mvot.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["mvot*"]
-

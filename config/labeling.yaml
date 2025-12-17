@@ -29,7 +29,7 @@ source_map: truck=car,motorcycle=car,bicycle=car,bus=car
 conf: 0.15
 iou: 0.7
 frame_stride: 5
-max_frames_per_video: 4000
+max_frames_per_video: 4000  # 0 means no limit
 train_ratio: 0.9
 val_ratio: 0.1
 seed: 0

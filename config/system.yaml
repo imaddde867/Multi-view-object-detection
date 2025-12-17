@@ -34,6 +34,8 @@ tracker:
   embedder:
     # Options: "colorhist" (no torch), "torch_resnet18" (best)
     type: colorhist
+    bins: 16
+    # device: cpu
 
 run:
   frame_stride: 1

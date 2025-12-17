@@ -10,7 +10,7 @@ Example layout:
 ```
 data/raw/session_01/Cam1.mp4
 data/raw/session_01/Cam2.mp4
-data/processed/sam3_autolabel/dataset.yaml
+data/processed/sam3_autolabel_allcams/dataset.yaml
 ```
 
 Large artifacts (datasets, runs, weights) should live outside git and be shared via tarball if needed.

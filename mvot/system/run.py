@@ -31,7 +31,7 @@ def _default_cfg() -> dict[str, Any]:
             "max_age": 30,
             "match_threshold": 0.5,
             "global_match_threshold": 0.75,
-            "embedder": {"type": "colorhist"},
+            "embedder": {"type": "colorhist", "bins": 16},
         },
         "run": {"frame_stride": 1, "max_frames": None, "groups": []},
         "output": {"dir": "results/system", "write_video": False, "video_fps": 0.0},
@@ -153,11 +153,16 @@ def run_multiview(cfg: dict[str, Any]) -> None:
         half=bool(runtime_cfg.get("half", False)),
     )
 
-    embedder_type = str(tracker_cfg.get("embedder", {}).get("type", "colorhist"))
+    embedder_cfg = tracker_cfg.get("embedder", {}) or {}
+    if isinstance(embedder_cfg, str):
+        embedder_cfg = {"type": embedder_cfg}
+    embedder_type = str(embedder_cfg.get("type", "colorhist"))
     if embedder_type == "torch_resnet18":
-        embedder = TorchResNet18Embedder(device=str(runtime_cfg.get("device", "cpu")) or "cpu")
+        embedder_device = str(embedder_cfg.get("device", runtime_cfg.get("device", "cpu")) or "cpu")
+        embedder = TorchResNet18Embedder(device=embedder_device)
     else:
-        embedder = ColorHistEmbedder()
+        bins = int(embedder_cfg.get("bins", 16))
+        embedder = ColorHistEmbedder(bins=bins)
 
     selected_groups: list[str] = [str(g) for g in run_cfg.get("groups", []) if str(g).strip()]
     if not selected_groups:

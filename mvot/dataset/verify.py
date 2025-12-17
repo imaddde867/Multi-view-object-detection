@@ -125,10 +125,7 @@ def verify_dataset(
         if not images_dir.exists():
             err(f"Missing {subset} images dir: {images_dir}")
             continue
-        if images_dir.name == "images":
-            labels_dir = images_dir.parent / "labels"
-        else:
-            labels_dir = images_dir.parent / "labels"
+        labels_dir = images_dir.parent / "labels"
         if not labels_dir.exists():
             err(f"Missing {subset} labels dir: {labels_dir}")
             continue
@@ -251,4 +248,3 @@ def verify_dataset(
         warnings=warnings,
         errors=errors,
     )
-

@@ -13,6 +13,9 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+Optional extras:
+- `pip install -e ".[tracking]"` to enable the `torch_resnet18` embedder.
+
 ### SAM3 install (required for labeling)
 
 SAM3 is installed from source. Follow https://github.com/facebookresearch/sam3 and ensure `sam3` is importable in the same environment as this repo.
@@ -25,10 +28,10 @@ Edit `config/labeling.yaml` (videos, output path, SAM3 checkpoint), then run:
 mvot label --config config/labeling.yaml --sam3-checkpoint /path/to/sam3.pt
 ```
 
-Outputs a standard Ultralytics dataset:
+Outputs a standard Ultralytics dataset (location comes from `out:` in the config):
 
 ```text
-data/processed/sam3_autolabel/
+data/processed/sam3_autolabel_allcams/
   dataset.yaml
   train/images/*.jpg
   train/labels/*.txt
@@ -53,7 +56,7 @@ mvot train --config config/train.yaml
 ```
 
 Notes:
-- Default `model: yolo11m.pt` is configurable; set to any Ultralytics-supported checkpoint.
+- Default `model: yolov8n.pt` is configurable; set to any Ultralytics-supported checkpoint.
 - Multi-GPU: set `runtime.device: "0,1"` (or `"0,1,2,3"`) in `config/train.yaml` and request multiple GPUs in SLURM.
 
 ## 3) Multi-view detection + tracking (camera pairs/groups)
@@ -65,6 +68,11 @@ mvot run --config config/system.yaml
 ```
 
 This writes per-group JSON to `results/system/` and (optionally) rendered videos.
+
+## Data and outputs
+
+- `data/raw/` and `data/processed/` are inputs/outputs and are intentionally ignored by git.
+- `results/` is also ignored; it contains training runs and system outputs.
 
 ## SLURM
 

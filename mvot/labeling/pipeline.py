@@ -51,7 +51,7 @@ def _default_cfg() -> dict[str, Any]:
     return {
         "videos": [],
         "groups": {},
-        "out": "data/processed/sam3_autolabel",
+        "out": "data/processed/sam3_autolabel_allcams",
         "targets": "person,car",
         "proposal_model": "yolov8n.pt",
         "proposal_imgsz": 960,
@@ -155,22 +155,49 @@ def _as_label_config(cfg: dict[str, Any]) -> LabelConfig:
 
     sam3 = base["sam3"]
     runtime = base["runtime"]
+
+    proposal_imgsz_raw = base.get("proposal_imgsz", 960)
+    proposal_imgsz = int(proposal_imgsz_raw) if proposal_imgsz_raw not in (None, "") else 0
+    if proposal_imgsz < 0:
+        proposal_imgsz = 0
+
+    frame_stride = int(base.get("frame_stride", 1) or 1)
+    if frame_stride < 1:
+        raise ValueError("frame_stride must be >= 1.")
+
+    max_frames_raw = base.get("max_frames_per_video", 0)
+    if max_frames_raw in (None, "", 0):
+        max_frames_per_video = 0
+    else:
+        max_frames_per_video = int(max_frames_raw)
+        if max_frames_per_video < 0:
+            max_frames_per_video = 0
+
+    train_ratio = float(base.get("train_ratio", 0.0))
+    val_ratio = float(base.get("val_ratio", 0.0))
+    if train_ratio < 0 or val_ratio < 0 or train_ratio + val_ratio > 1.0 + 1e-9:
+        raise ValueError("Expected train_ratio>=0, val_ratio>=0 and train_ratio+val_ratio<=1.")
+
+    min_box_area = int(base.get("min_box_area", 0) or 0)
+    if min_box_area < 0:
+        raise ValueError("min_box_area must be >= 0.")
+
     return LabelConfig(
         videos=[str(v) for v in videos],
         groups=groups,
         out=str(base["out"]),
         targets=targets,
         proposal_model=str(base["proposal_model"]),
-        proposal_imgsz=int(base.get("proposal_imgsz", 960) or 0),
+        proposal_imgsz=proposal_imgsz,
         source_map=str(base["source_map"]),
         conf=float(base["conf"]),
         iou=float(base["iou"]),
-        frame_stride=int(base["frame_stride"]),
-        max_frames_per_video=int(base["max_frames_per_video"]),
-        train_ratio=float(base["train_ratio"]),
-        val_ratio=float(base["val_ratio"]),
+        frame_stride=frame_stride,
+        max_frames_per_video=max_frames_per_video,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
         seed=int(base["seed"]),
-        min_box_area=int(base["min_box_area"]),
+        min_box_area=min_box_area,
         keep_empty=bool(base["keep_empty"]),
         save_viz=bool(base["save_viz"]),
         sam3_checkpoint=str(sam3.get("checkpoint", "")),
@@ -220,6 +247,8 @@ def label_videos(cfg: dict[str, Any]) -> None:
         raise ValueError("No videos provided. Set `videos`/`groups` in config or pass `--videos`.")
     if not c.targets:
         raise ValueError("Targets cannot be empty.")
+    if len(set(c.targets)) != len(c.targets):
+        raise ValueError("Targets must be unique.")
     if "cuda" in c.sam3_device.lower():
         try:
             import torch
