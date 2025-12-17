@@ -15,6 +15,9 @@ targets: person,car,bus
 # Stronger proposals help SAM3 converge on the right object masks.
 # Override on HPC with `--proposal-model yolo11m.pt` if available.
 proposal_model: yolov8n.pt
+# If your objects are small/crowded (e.g. Cam1/Cam2), bump this up (e.g. 1280 or 1536)
+# and/or use a larger proposal model (e.g. `yolov8x.pt` or `yolo11m.pt`).
+proposal_imgsz: 1280
 source_map: truck=car,motorcycle=car,bicycle=car
 conf: 0.35
 iou: 0.5

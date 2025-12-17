@@ -22,6 +22,7 @@ class LabelConfig:
     out: str
     targets: list[str]
     proposal_model: str
+    proposal_imgsz: int
     source_map: str
     conf: float
     iou: float
@@ -51,6 +52,7 @@ def _default_cfg() -> dict[str, Any]:
         "out": "data/processed/sam3_autolabel",
         "targets": "person,car,bus",
         "proposal_model": "yolov8n.pt",
+        "proposal_imgsz": 960,
         "source_map": "truck=car,motorcycle=car,bicycle=car",
         "conf": 0.35,
         "iou": 0.5,
@@ -98,6 +100,7 @@ def _as_label_config(cfg: dict[str, Any]) -> LabelConfig:
         out=str(base["out"]),
         targets=targets,
         proposal_model=str(base["proposal_model"]),
+        proposal_imgsz=int(base.get("proposal_imgsz", 960) or 0),
         source_map=str(base["source_map"]),
         conf=float(base["conf"]),
         iou=float(base["iou"]),
@@ -135,6 +138,28 @@ def _draw_viz(frame_bgr: np.ndarray, dets: list[Det], names: list[str]) -> np.nd
         cv2.rectangle(out, (x0, y0), (x1, y1), (0, 255, 0), 2)
         label = f"{names[det.cls_id]} {det.score:.2f}"
         cv2.putText(out, label, (x0, max(0, y0 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    return out
+
+
+def _draw_viz_overlay(
+    frame_bgr: np.ndarray,
+    *,
+    proposal_dets: list[Det],
+    refined_dets: list[Det],
+    names: list[str],
+) -> np.ndarray:
+    out = frame_bgr.copy()
+    # Proposals in red, refined in green.
+    for det in proposal_dets:
+        x0, y0, x1, y1 = [int(v) for v in det.xyxy]
+        cv2.rectangle(out, (x0, y0), (x1, y1), (0, 0, 255), 2)
+        label = f"P:{names[det.cls_id]}"
+        cv2.putText(out, label, (x0, max(0, y0 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+    for det in refined_dets:
+        x0, y0, x1, y1 = [int(v) for v in det.xyxy]
+        cv2.rectangle(out, (x0, y0), (x1, y1), (0, 255, 0), 2)
+        label = f"R:{names[det.cls_id]}"
+        cv2.putText(out, label, (x0, min(frame_bgr.shape[0] - 1, y1 + 18)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     return out
 
 
@@ -180,6 +205,7 @@ def label_videos(cfg: dict[str, Any]) -> None:
     meta = {
         "targets": c.targets,
         "proposal_model": c.proposal_model,
+        "proposal_imgsz": c.proposal_imgsz,
         "source_map": source_map,
         "conf": c.conf,
         "iou": c.iou,
@@ -218,6 +244,7 @@ def label_videos(cfg: dict[str, Any]) -> None:
                 target_to_id=target_to_id,
                 source_map=source_map,
                 min_box_area=c.min_box_area,
+                imgsz=c.proposal_imgsz if c.proposal_imgsz > 0 else None,
             )
             if not proposals:
                 if not c.keep_empty:
@@ -269,7 +296,8 @@ def label_videos(cfg: dict[str, Any]) -> None:
             total_labels += len(lines)
 
             if c.save_viz:
-                viz = _draw_viz(frame, dets, c.targets)
+                proposal_dets = [p.det for p in proposals]
+                viz = _draw_viz_overlay(frame, proposal_dets=proposal_dets, refined_dets=dets, names=c.targets)
                 viz_out = out_root / "viz" / subset / f"{name}.jpg"
                 cv2.imwrite(str(viz_out), viz)
 

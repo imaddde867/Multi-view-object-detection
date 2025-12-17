@@ -21,6 +21,7 @@ def _cmd_label(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--out", type=str, default="", help="Output dataset directory.")
     sub.add_argument("--targets", type=str, default="", help="Comma-separated targets (default: person,car,bus).")
     sub.add_argument("--proposal-model", type=str, default="", help="Ultralytics weights for class proposals.")
+    sub.add_argument("--proposal-imgsz", type=int, default=-1, help="Inference size for proposal model.")
     sub.add_argument("--source-map", type=str, default="", help="Optional mapping (e.g. 'truck=car,motorcycle=car').")
     sub.add_argument("--conf", type=float, default=-1.0, help="Proposal confidence threshold.")
     sub.add_argument("--iou", type=float, default=-1.0, help="Proposal IoU threshold.")
@@ -101,6 +102,7 @@ def main() -> None:
             "out": out_dir or None,
             "targets": targets or None,
             "proposal_model": proposal_model or None,
+            "proposal_imgsz": args.proposal_imgsz if args.proposal_imgsz >= 1 else None,
             "source_map": source_map or None,
             "conf": args.conf if args.conf >= 0 else None,
             "iou": args.iou if args.iou >= 0 else None,
