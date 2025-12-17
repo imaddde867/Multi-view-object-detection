@@ -1,50 +1,6 @@
-# Python
+/data/raw/
+/data/processed/
+/results/
 __pycache__/
 *.py[cod]
-*.egg-info/
-.venv/
-.venv*/
-.env
-.env.*
-.mypy_cache/
-.pytest_cache/
-
-# OS/editor
 .DS_Store
-Thumbs.db
-
-# Data + artifacts (keep out of git)
-data/raw/
-data/processed/
-results/
-runs/
-checkpoints/
-weights/
-outputs/
-*.pt
-*.pth
-*.ckpt
-*.onnx
-*.engine
-*.zip
-*.tar
-*.tar.gz
-*.tgz
-*.mp4
-*.mov
-*.avi
-*.mkv
-*.npz
-*.npy
-
-# Logs + slurm
-*.log
-slurm-*.out
-
-# Notebooks + caches
-.ipynb_checkpoints/
-wandb/
-ultralytics/
-
-# Keep tiny pointers inside ignored trees
-!data/README.md
