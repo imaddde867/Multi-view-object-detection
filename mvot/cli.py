@@ -86,12 +86,17 @@ def main() -> None:
         if args.config:
             config = load_yaml(Path(args.config))
 
+        targets = args.targets.strip() if isinstance(args.targets, str) else ""
+        out_dir = args.out.strip() if isinstance(args.out, str) else ""
+        proposal_model = args.proposal_model.strip() if isinstance(args.proposal_model, str) else ""
+        source_map = args.source_map.strip() if isinstance(args.source_map, str) else ""
+
         overrides = {
-            "videos": args.videos,
-            "out": args.out,
-            "targets": args.targets,
-            "proposal_model": args.proposal_model,
-            "source_map": args.source_map,
+            "videos": args.videos or None,
+            "out": out_dir or None,
+            "targets": targets or None,
+            "proposal_model": proposal_model or None,
+            "source_map": source_map or None,
             "conf": args.conf if args.conf >= 0 else None,
             "iou": args.iou if args.iou >= 0 else None,
             "frame_stride": args.frame_stride if args.frame_stride >= 1 else None,
@@ -103,7 +108,7 @@ def main() -> None:
             "save_viz": bool(args.save_viz),
             "keep_empty": bool(args.keep_empty),
             "sam3": {
-                "checkpoint": args.sam3_checkpoint,
+                "checkpoint": args.sam3_checkpoint.strip() or None,
                 "load_from_hf": bool(args.sam3_load_from_hf),
                 "confidence": args.sam3_confidence if args.sam3_confidence >= 0 else None,
                 "mask_close": args.mask_close if args.mask_close >= 0 else None,
@@ -120,14 +125,19 @@ def main() -> None:
         if args.config:
             config = load_yaml(Path(args.config))
 
+        data_path = args.data.strip() if isinstance(args.data, str) else ""
+        model_path = args.model.strip() if isinstance(args.model, str) else ""
+        project = args.project.strip() if isinstance(args.project, str) else ""
+        name = args.name.strip() if isinstance(args.name, str) else ""
+
         overrides = {
-            "data": args.data,
-            "model": args.model,
+            "data": data_path or None,
+            "model": model_path or None,
             "epochs": args.epochs if args.epochs >= 0 else None,
             "imgsz": args.imgsz if args.imgsz >= 0 else None,
             "batch": args.batch if args.batch >= 0 else None,
-            "project": args.project,
-            "name": args.name,
+            "project": project or None,
+            "name": name or None,
             "seed": args.seed if args.seed >= 0 else None,
             "workers": args.workers if args.workers >= 0 else None,
             "runtime": {"device": args.device, "half": bool(args.half)},
