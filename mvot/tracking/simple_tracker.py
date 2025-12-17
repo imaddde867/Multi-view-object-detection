@@ -58,6 +58,10 @@ class SimpleTracker:
         for t in self.tracks:
             t.age += 1
 
+        if not dets:
+            self.tracks = [t for t in self.tracks if t.age <= self.max_age]
+            return list(self.tracks)
+
         det_embeddings = [self.embedder.embed(frame_bgr, d.xyxy) for d in dets]
 
         if not self.tracks:
@@ -104,4 +108,3 @@ class SimpleTracker:
 
         self.tracks = [t for t in self.tracks if t.age <= self.max_age]
         return list(self.tracks)
-

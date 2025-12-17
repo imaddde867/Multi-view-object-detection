@@ -192,16 +192,6 @@ def _ensure_dataset_dirs(out_root: Path, save_viz: bool) -> None:
             (out_root / "viz" / subset).mkdir(parents=True, exist_ok=True)
 
 
-def _draw_viz(frame_bgr: np.ndarray, dets: list[Det], names: list[str]) -> np.ndarray:
-    out = frame_bgr.copy()
-    for det in dets:
-        x0, y0, x1, y1 = [int(v) for v in det.xyxy]
-        cv2.rectangle(out, (x0, y0), (x1, y1), (0, 255, 0), 2)
-        label = f"{names[det.cls_id]} {det.score:.2f}"
-        cv2.putText(out, label, (x0, max(0, y0 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-    return out
-
-
 def _draw_viz_overlay(
     frame_bgr: np.ndarray,
     *,

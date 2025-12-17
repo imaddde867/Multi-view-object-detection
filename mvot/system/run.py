@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,12 +13,6 @@ from mvot.tracking.global_association import GlobalIDAssigner, GlobalTrackView
 from mvot.tracking.simple_tracker import SimpleTracker
 from mvot.utils.boxes import Det
 from mvot.utils.video import VideoInfo, open_video
-
-
-@dataclass(frozen=True)
-class CameraCfg:
-    name: str
-    source: str
 
 
 def _default_cfg() -> dict[str, Any]:

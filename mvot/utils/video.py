@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 import cv2
 
@@ -27,25 +26,4 @@ def open_video(path: Path) -> tuple[cv2.VideoCapture, VideoInfo]:
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     return cap, VideoInfo(path=path, width=width, height=height, fps=fps, frame_count=frame_count)
 
-
-def iter_frames(
-    cap: cv2.VideoCapture,
-    *,
-    stride: int = 1,
-    max_frames: int | None = None,
-) -> Iterator[tuple[int, "cv2.typing.MatLike"]]:
-    stride = max(1, int(stride))
-    kept = 0
-    frame_idx = -1
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        frame_idx += 1
-        if frame_idx % stride != 0:
-            continue
-        yield frame_idx, frame
-        kept += 1
-        if max_frames is not None and kept >= max_frames:
-            break
 

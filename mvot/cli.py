@@ -20,7 +20,7 @@ def _cmd_label(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--config", type=str, default="", help="Optional YAML config; CLI args override it.")
     sub.add_argument("--videos", nargs="+", required=False, help="Input video paths.")
     sub.add_argument("--out", type=str, default="", help="Output dataset directory.")
-    sub.add_argument("--targets", type=str, default="", help="Comma-separated targets (default: person,car,bus).")
+    sub.add_argument("--targets", type=str, default="", help="Comma-separated targets (default: person,car).")
     sub.add_argument("--proposal-model", type=str, default="", help="Ultralytics weights for class proposals.")
     sub.add_argument("--proposal-imgsz", type=int, default=-1, help="Inference size for proposal model.")
     sub.add_argument("--source-map", type=str, default="", help="Optional mapping (e.g. 'truck=car,motorcycle=car').")
