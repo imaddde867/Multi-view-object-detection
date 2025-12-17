@@ -53,15 +53,12 @@ class YoloDetector:
         except Exception as e:  # pragma: no cover
             raise RuntimeError("Missing dependency: ultralytics. Install with `pip install -r requirements.txt`.") from e
 
+        self.device = str(device or "").strip()
+        self.half = bool(half)
         self.model = YOLO(weights)
-        if device:
+        if self.device:
             try:
-                self.model.to(device)
-            except Exception:
-                pass
-        if half:
-            try:
-                self.model.model.half()
+                self.model.to(self.device)
             except Exception:
                 pass
 
@@ -72,8 +69,17 @@ class YoloDetector:
         elif isinstance(names_obj, (list, tuple)):
             self.names = {i: str(n) for i, n in enumerate(names_obj)}
 
-    def predict_batch(self, frames_bgr: list[np.ndarray], *, conf: float, iou: float, imgsz: int) -> list[list[tuple[tuple[float, float, float, float], float, int]]]:
-        results = self.model.predict(frames_bgr, conf=float(conf), iou=float(iou), imgsz=int(imgsz), verbose=False)
+    def predict_batch(
+        self, frames_bgr: list[np.ndarray], *, conf: float, iou: float, imgsz: int
+    ) -> list[list[tuple[tuple[float, float, float, float], float, int]]]:
+        results = self.model.predict(
+            frames_bgr,
+            conf=float(conf),
+            iou=float(iou),
+            imgsz=int(imgsz),
+            half=bool(self.half),
+            verbose=False,
+        )
         out: list[list[tuple[tuple[float, float, float, float], float, int]]] = []
         for r in results:
             boxes = getattr(r, "boxes", None)
@@ -138,7 +144,11 @@ def run_multiview(cfg: dict[str, Any]) -> None:
     if not model_path:
         raise ValueError("Missing detector.model in config (weights path).")
 
-    detector = YoloDetector(model_path, device=str(runtime_cfg.get("device", "")), half=bool(runtime_cfg.get("half", False)))
+    detector = YoloDetector(
+        model_path,
+        device=str(runtime_cfg.get("device", "")),
+        half=bool(runtime_cfg.get("half", False)),
+    )
 
     embedder_type = str(tracker_cfg.get("embedder", {}).get("type", "colorhist"))
     if embedder_type == "torch_resnet18":
@@ -148,7 +158,7 @@ def run_multiview(cfg: dict[str, Any]) -> None:
 
     selected_groups: list[str] = [str(g) for g in run_cfg.get("groups", []) if str(g).strip()]
     if not selected_groups:
-        selected_groups = list(groups_cfg.keys())
+        selected_groups = [str(g) for g in groups_cfg.keys()]
 
     output_root = Path(str(out_cfg.get("dir", "results/system")))
     output_root.mkdir(parents=True, exist_ok=True)
@@ -156,6 +166,15 @@ def run_multiview(cfg: dict[str, Any]) -> None:
     frame_stride = int(run_cfg.get("frame_stride", 1) or 1)
     max_frames = run_cfg.get("max_frames", None)
     max_frames_i = None if max_frames in (None, "", 0) else int(max_frames)
+
+    def _camera_info(info: VideoInfo) -> dict[str, Any]:
+        return {
+            "path": str(info.path),
+            "width": int(info.width),
+            "height": int(info.height),
+            "fps": float(info.fps),
+            "frame_count": int(info.frame_count),
+        }
 
     for group_name in selected_groups:
         cam_names = groups_cfg.get(group_name)
@@ -174,26 +193,29 @@ def run_multiview(cfg: dict[str, Any]) -> None:
             caps[cam] = cap
             infos[cam] = info
 
-        trackers = {cam: SimpleTracker(embedder, max_age=int(tracker_cfg.get("max_age", 30)), match_threshold=float(tracker_cfg.get("match_threshold", 0.5))) for cam in cam_names}
+        trackers = {
+            cam: SimpleTracker(
+                embedder,
+                max_age=int(tracker_cfg.get("max_age", 30)),
+                match_threshold=float(tracker_cfg.get("match_threshold", 0.5)),
+            )
+            for cam in cam_names
+        }
         gid = GlobalIDAssigner(match_threshold=float(tracker_cfg.get("global_match_threshold", 0.75)))
-
         anchor_cam = cam_names[0]
 
-    def _camera_info(info: VideoInfo) -> dict[str, Any]:
-        return {"path": str(info.path), "width": info.width, "height": info.height, "fps": info.fps, "frame_count": info.frame_count}
-
-    out_json = {
-        "metadata": {
-            "group": group_name,
-            "cameras": {c: _camera_info(infos[c]) for c in cam_names},
-            "classes": targets,
-            "model": model_path,
-        },
-        "frames": [],
-    }
+        out_json: dict[str, Any] = {
+            "metadata": {
+                "group": group_name,
+                "cameras": {c: _camera_info(infos[c]) for c in cam_names},
+                "classes": targets,
+                "model": model_path,
+            },
+            "frames": [],
+        }
 
         write_video = bool(out_cfg.get("write_video", False))
-        writer = None
+        writer: cv2.VideoWriter | None = None
         video_out_path = output_root / f"{group_name}.avi"
         color_seed = 1337
 
@@ -256,7 +278,15 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                             "score": float(t.score),
                         }
                     )
-                    views.append(GlobalTrackView(cam=cam, local_id=local, cls_id=int(t.cls_id), xyxy=t.xyxy, embedding=t.embedding))
+                    views.append(
+                        GlobalTrackView(
+                            cam=cam,
+                            local_id=local,
+                            cls_id=int(t.cls_id),
+                            xyxy=t.xyxy,
+                            embedding=t.embedding,
+                        )
+                    )
                 per_cam_tracks[cam] = out_tracks
 
                 if cam == anchor_cam:
@@ -274,7 +304,7 @@ def run_multiview(cfg: dict[str, Any]) -> None:
             out_json["frames"].append({"frame": processed - 1, "cameras": per_cam_tracks})
 
             if write_video:
-                rendered = []
+                rendered: list[np.ndarray] = []
                 for cam in cam_names:
                     rendered.append(_draw_tracks(frames[cam], per_cam_tracks[cam], targets, color_seed))
                 h = min(img.shape[0] for img in rendered)
@@ -282,7 +312,12 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 combined = cv2.hconcat(resized)
                 if writer is None:
                     fps = float(out_cfg.get("video_fps") or 0.0) or infos[anchor_cam].fps or 30.0
-                    writer = cv2.VideoWriter(str(video_out_path), cv2.VideoWriter_fourcc(*"XVID"), fps, (combined.shape[1], combined.shape[0]))
+                    writer = cv2.VideoWriter(
+                        str(video_out_path),
+                        cv2.VideoWriter_fourcc(*"XVID"),
+                        float(fps),
+                        (combined.shape[1], combined.shape[0]),
+                    )
                 writer.write(combined)
 
         for cap in caps.values():
@@ -291,5 +326,5 @@ def run_multiview(cfg: dict[str, Any]) -> None:
             writer.release()
 
         out_path = output_root / f"{group_name}.json"
-        out_path.write_text(json.dumps(out_json, indent=2))
+        out_path.write_text(json.dumps(out_json, indent=2, default=str))
         print(f"✅ Group {group_name}: wrote {out_path}" + (f" and {video_out_path}" if write_video else ""))
