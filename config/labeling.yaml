@@ -1,6 +1,12 @@
 videos:
+  - data/raw/testing_videos/Cam1.mp4
+  - data/raw/testing_videos/Cam2.mp4
   - data/raw/testing_videos/Cam3.mp4
   - data/raw/testing_videos/Cam4.mp4
+  - data/raw/testing_videos/Cam5.mp4
+  - data/raw/testing_videos/Cam6.mp4
+  - data/raw/testing_videos/Cam7.mp4
+  - data/raw/testing_videos/Cam8.mp4
 
 out: data/processed/sam3_autolabel
 
@@ -32,4 +38,3 @@ sam3:
 runtime:
   device: cuda:0
   half: true
-

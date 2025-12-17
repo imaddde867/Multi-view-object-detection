@@ -82,7 +82,11 @@ def _as_label_config(cfg: dict[str, Any]) -> LabelConfig:
         else:
             base[k] = v
 
-    targets = [t.strip() for t in str(base["targets"]).split(",") if t.strip()]
+    raw_targets = base["targets"]
+    if isinstance(raw_targets, list):
+        targets = [str(t).strip() for t in raw_targets if str(t).strip()]
+    else:
+        targets = [t.strip() for t in str(raw_targets).split(",") if t.strip()]
     videos = base["videos"] or []
     if isinstance(videos, str):
         videos = [videos]
@@ -140,6 +144,20 @@ def label_videos(cfg: dict[str, Any]) -> None:
         raise ValueError("No videos provided. Set `videos` in config or pass `--videos`.")
     if not c.targets:
         raise ValueError("Targets cannot be empty.")
+    if "cuda" in c.sam3_device.lower():
+        try:
+            import torch
+
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "CUDA is required for SAM3 labeling, but no GPU is visible.\n"
+                    "You're likely on a login/CPU node. On Puhti, run via:\n"
+                    "  `sbatch slurm/label.sbatch`\n"
+                    "or an interactive GPU shell:\n"
+                    "  `srun -A project_2015432 -p gpu --gres=gpu:v100:1 --cpus-per-task=16 --mem=128G --time=00:20:00 --pty bash -l`"
+                )
+        except ModuleNotFoundError:
+            raise RuntimeError("Missing dependency: torch (required for SAM3 labeling).") from None
 
     out_root = Path(c.out)
     _ensure_dataset_dirs(out_root, save_viz=c.save_viz)

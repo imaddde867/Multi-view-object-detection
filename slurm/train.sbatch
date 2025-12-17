@@ -25,4 +25,5 @@ if [[ -f ".venv/bin/activate" ]]; then
 fi
 
 # For 2-4 GPUs, request more GPUs and set `runtime.device: "0,1"` (or "0,1,2,3") in config/train.yaml.
-mvot train --config config/train.yaml
+TRAIN_CONFIG="${MVOT_TRAIN_CONFIG:-config/train.yaml}"
+mvot train --config "$TRAIN_CONFIG"

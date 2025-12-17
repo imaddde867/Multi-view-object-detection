@@ -29,4 +29,12 @@ export HF_HOME="${HF_HOME:-/scratch/project_2015432/exp/.hf}"
 
 # Label videos with YOLO proposals + SAM3 refinement.
 # Edit `config/labeling.yaml` and set `sam3.checkpoint` (or pass --sam3-checkpoint).
-mvot label --config config/labeling.yaml
+LABEL_CONFIG="${MVOT_LABEL_CONFIG:-config/labeling.yaml}"
+SAM3_CHECKPOINT="${SAM3_CHECKPOINT:-}"
+
+cmd=(mvot label --config "$LABEL_CONFIG")
+if [[ -n "$SAM3_CHECKPOINT" ]]; then
+  cmd+=(--sam3-checkpoint "$SAM3_CHECKPOINT")
+fi
+
+"${cmd[@]}"

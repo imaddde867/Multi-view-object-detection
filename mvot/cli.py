@@ -10,8 +10,9 @@ from mvot.utils.yaml import load_yaml, merge_dicts
 
 
 def _add_common_io_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--device", type=str, default="", help="Device override (e.g., cuda:0, 0, cpu).")
-    parser.add_argument("--half", action="store_true", help="Use half precision (CUDA only).")
+    parser.add_argument("--device", type=str, default=None, help="Device override (e.g., cuda:0, 0, cpu).")
+    # Tri-state: None preserves config, True overrides.
+    parser.add_argument("--half", action="store_true", default=None, help="Use half precision (CUDA only).")
 
 
 def _cmd_label(sub: argparse.ArgumentParser) -> None:
@@ -29,10 +30,12 @@ def _cmd_label(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--val-ratio", type=float, default=-1.0, help="Val split ratio.")
     sub.add_argument("--seed", type=int, default=-1, help="Split seed.")
     sub.add_argument("--min-box-area", type=int, default=-1, help="Drop boxes smaller than this (pixels^2).")
-    sub.add_argument("--save-viz", action="store_true", help="Save visualization images.")
-    sub.add_argument("--keep-empty", action="store_true", help="Keep frames even if no labels found.")
+    # Tri-state: None preserves config, True overrides.
+    sub.add_argument("--save-viz", action="store_true", default=None, help="Save visualization images.")
+    sub.add_argument("--keep-empty", action="store_true", default=None, help="Keep frames even if no labels found.")
     sub.add_argument("--sam3-checkpoint", type=str, default="", help="Path to SAM3 checkpoint.")
-    sub.add_argument("--sam3-load-from-hf", action="store_true", help="Allow SAM3 to download checkpoints.")
+    # Tri-state: None preserves config, True overrides.
+    sub.add_argument("--sam3-load-from-hf", action="store_true", default=None, help="Allow SAM3 to download checkpoints.")
     sub.add_argument("--sam3-confidence", type=float, default=-1.0, help="SAM3 confidence threshold.")
     sub.add_argument("--mask-close", type=int, default=-1, help="Morphological close kernel size (odd int).")
     sub.add_argument("--sam3-nms-iou", type=float, default=-1.0, help="NMS IoU for refined boxes.")
@@ -62,7 +65,8 @@ def _cmd_run(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--iou", type=float, default=-1.0, help="Detection IoU override.")
     sub.add_argument("--imgsz", type=int, default=-1, help="Inference size override.")
     sub.add_argument("--max-frames", type=int, default=-1, help="Optional max frames per camera.")
-    sub.add_argument("--write-video", action="store_true", help="Write rendered video(s).")
+    # Tri-state: None preserves config, True overrides.
+    sub.add_argument("--write-video", action="store_true", default=None, help="Write rendered video(s).")
     _add_common_io_args(sub)
 
 
@@ -90,6 +94,7 @@ def main() -> None:
         out_dir = args.out.strip() if isinstance(args.out, str) else ""
         proposal_model = args.proposal_model.strip() if isinstance(args.proposal_model, str) else ""
         source_map = args.source_map.strip() if isinstance(args.source_map, str) else ""
+        device = args.device.strip() if isinstance(args.device, str) else ""
 
         overrides = {
             "videos": args.videos or None,
@@ -105,16 +110,16 @@ def main() -> None:
             "val_ratio": args.val_ratio if args.val_ratio >= 0 else None,
             "seed": args.seed if args.seed >= 0 else None,
             "min_box_area": args.min_box_area if args.min_box_area >= 0 else None,
-            "save_viz": bool(args.save_viz),
-            "keep_empty": bool(args.keep_empty),
+            "save_viz": args.save_viz,
+            "keep_empty": args.keep_empty,
             "sam3": {
                 "checkpoint": args.sam3_checkpoint.strip() or None,
-                "load_from_hf": bool(args.sam3_load_from_hf),
+                "load_from_hf": args.sam3_load_from_hf,
                 "confidence": args.sam3_confidence if args.sam3_confidence >= 0 else None,
                 "mask_close": args.mask_close if args.mask_close >= 0 else None,
                 "nms_iou": args.sam3_nms_iou if args.sam3_nms_iou >= 0 else None,
             },
-            "runtime": {"device": args.device, "half": bool(args.half)},
+            "runtime": {"device": device or None, "half": args.half},
         }
         cfg = merge_dicts(config, overrides)
         label_videos(cfg)
@@ -129,6 +134,7 @@ def main() -> None:
         model_path = args.model.strip() if isinstance(args.model, str) else ""
         project = args.project.strip() if isinstance(args.project, str) else ""
         name = args.name.strip() if isinstance(args.name, str) else ""
+        device = args.device.strip() if isinstance(args.device, str) else ""
 
         overrides = {
             "data": data_path or None,
@@ -140,7 +146,7 @@ def main() -> None:
             "name": name or None,
             "seed": args.seed if args.seed >= 0 else None,
             "workers": args.workers if args.workers >= 0 else None,
-            "runtime": {"device": args.device, "half": bool(args.half)},
+            "runtime": {"device": device or None, "half": args.half},
         }
         cfg = merge_dicts(config, overrides)
         train_yolo(cfg)

@@ -66,3 +66,6 @@ Example job files:
 - `slurm/label.sbatch`
 - `slurm/train.sbatch`
 - `slurm/run.sbatch`
+
+End-to-end submission helper:
+- `bash slurm/submit_pipeline.sh`

@@ -21,4 +21,5 @@ if [[ -f ".venv/bin/activate" ]]; then
   source .venv/bin/activate
 fi
 
-mvot run --config config/system.yaml
+RUN_CONFIG="${MVOT_RUN_CONFIG:-config/system.yaml}"
+mvot run --config "$RUN_CONFIG"
