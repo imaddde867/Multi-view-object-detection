@@ -1,42 +1,50 @@
-# YOLO trained models
-*.pt
-
-# OS cruft
-.DS_Store
-
-# Dataset folders
-data/processed/
-data/raw/multiclass_ground_truth/
-data/raw/multiclass_ground_truth_images/
-data/raw/testing_videos/
-data/raw/phone/
-
-# Legacy ignore (in case they are created in root)
-data_train_val_test_car_person/
-data_train-test_3_classes/
-data_train_balanced/
-data_train-test/
-data_zip_file/
-
-# Training results
-runs/
-results/Detection/
-results/Detection_2Class/
-results/Detection_Balanced/
-results/training/
-results/system/
-
-# Cache
+# Python
 __pycache__/
-*.pyc
-
-# Local environments / build outputs
-.venv/
+*.py[cod]
 *.egg-info/
+.venv/
+.venv*/
+.env
+.env.*
+.mypy_cache/
+.pytest_cache/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+
+# Data + artifacts (keep out of git)
+data/raw/
+data/processed/
+results/
+runs/
+checkpoints/
+weights/
+outputs/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.npz
+*.npy
+
+# Logs + slurm
+*.log
 slurm-*.out
-scripts/__pycache__/demo_material/*.avi
-demo_material/*.pt
-demo_material/*.MOV
-demo_material/*.mov
-demo_material/*.mp4
-demo_material/*.avi
+
+# Notebooks + caches
+.ipynb_checkpoints/
+wandb/
+ultralytics/
+
+# Keep tiny pointers inside ignored trees
+!data/README.md

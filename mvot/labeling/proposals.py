@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -32,6 +33,16 @@ class Proposal:
 
 class YoloProposer:
     def __init__(self, weights: str, *, device: str = "", half: bool = False):
+        weights_path = Path(weights)
+        if weights_path.suffix:
+            if weights_path.is_absolute() or weights_path.parent != Path("."):
+                if not weights_path.exists():
+                    raise FileNotFoundError(f"YOLO weights not found: {weights_path}")
+            elif not weights_path.exists():
+                print(
+                    "⚠️ YOLO weights not found locally. Ultralytics will try to download them. "
+                    "If you're offline, download weights and pass a local path."
+                )
         try:
             from ultralytics import YOLO
         except Exception as e:  # pragma: no cover
@@ -92,4 +103,3 @@ class YoloProposer:
                 Proposal(det=Det(xyxy=(x0, y0, x1, y1), cls_id=target_to_id[tgt_name], score=float(score)), src_name=src_name, tgt_name=tgt_name)
             )
         return proposals
-

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,8 +32,11 @@ class Sam3BoxRefiner:
             ) from e
 
         if cfg.checkpoint:
+            ckpt = Path(cfg.checkpoint)
+            if not ckpt.exists():
+                raise FileNotFoundError(f"SAM3 checkpoint not found: {ckpt}")
             model = build_sam3_image_model(
-                checkpoint_path=cfg.checkpoint,
+                checkpoint_path=str(ckpt),
                 load_from_HF=False,
                 device=cfg.device,
                 enable_segmentation=True,

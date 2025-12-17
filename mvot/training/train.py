@@ -68,6 +68,17 @@ def train_yolo(cfg: dict[str, Any]) -> None:
     if not data_path.exists():
         raise FileNotFoundError(f"Dataset yaml not found: {data_path}")
 
+    model_path = Path(c.model)
+    if model_path.suffix:
+        if model_path.is_absolute() or model_path.parent != Path("."):
+            if not model_path.exists():
+                raise FileNotFoundError(f"YOLO weights not found: {model_path}")
+        elif not model_path.exists():
+            print(
+                "⚠️ YOLO weights not found locally. Ultralytics will try to download them. "
+                "If you're offline, download weights and pass a local path."
+            )
+
     try:
         from ultralytics import YOLO
     except Exception as e:  # pragma: no cover
@@ -117,4 +128,3 @@ def train_yolo(cfg: dict[str, Any]) -> None:
         exist_ok=True,
         verbose=True,
     )
-
