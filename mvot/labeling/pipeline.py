@@ -186,6 +186,7 @@ def label_videos(cfg: dict[str, Any]) -> None:
         video_path = Path(video)
         cap, info = open_video(video_path)
         stem = video_path.stem
+        warned_sam3_fallback = False
         pbar = tqdm(iter_frames(cap, stride=c.frame_stride, max_frames=c.max_frames_per_video), desc=f"Labeling {stem}", unit="frame")
         for frame_idx, frame in pbar:
             name = f"{stem}_f{frame_idx:06d}"
@@ -211,7 +212,14 @@ def label_videos(cfg: dict[str, Any]) -> None:
                 continue
 
             boxes = [p.det.xyxy for p in proposals]
-            refined = sam3.refine_xyxy(frame, boxes)
+            prompts = [p.tgt_name for p in proposals]
+            try:
+                refined = sam3.refine_xyxy_with_prompts(frame, boxes, prompts)
+            except Exception as e:
+                if not warned_sam3_fallback:
+                    print(f"⚠️ SAM3 refinement failed for {stem} (falling back to proposal boxes): {e}")
+                    warned_sam3_fallback = True
+                refined = boxes
 
             dets: list[Det] = []
             for p, xyxy in zip(proposals, refined):
@@ -270,4 +278,3 @@ def label_videos(cfg: dict[str, Any]) -> None:
     stats = {"images": total_images, "labels": total_labels, "config": asdict(c)}
     (out_root / "stats.json").write_text(json.dumps(stats, indent=2))
     print(f"✅ Labeled dataset written to: {dataset_yaml}")
-
