@@ -13,12 +13,13 @@ from mvot.labeling.proposals import YoloProposer, parse_kv_map
 from mvot.labeling.sam3_refiner import Sam3BoxRefiner, Sam3Config
 from mvot.utils.boxes import Det, area_xyxy, nms_xyxy, to_yolo_line
 from mvot.utils.hash_split import stable_split
-from mvot.utils.video import iter_frames, open_video
+from mvot.utils.video import open_video
 
 
 @dataclass(frozen=True)
 class LabelConfig:
     videos: list[str]
+    groups: dict[str, dict[str, str]]
     out: str
     targets: list[str]
     proposal_model: str
@@ -49,8 +50,9 @@ class LabelConfig:
 def _default_cfg() -> dict[str, Any]:
     return {
         "videos": [],
+        "groups": {},
         "out": "data/processed/sam3_autolabel",
-        "targets": "person,car,bus",
+        "targets": "person,car",
         "proposal_model": "yolov8n.pt",
         "proposal_imgsz": 960,
         "source_map": "truck=car,motorcycle=car,bicycle=car",
@@ -76,6 +78,62 @@ def _default_cfg() -> dict[str, Any]:
     }
 
 
+def _normalize_groups(raw: Any) -> dict[str, dict[str, str]]:
+    """
+    Normalize group configuration into:
+      {group_name: {camera_name: video_path}}
+
+    Supported YAML shapes:
+      groups:
+        g12: [path/to/cam1.mp4, path/to/cam2.mp4]
+        g34:
+          cam3: path/to/cam3.mp4
+          cam4: path/to/cam4.mp4
+    """
+    if raw in (None, "", [], {}):
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("`groups` must be a mapping like {group: [videos] | {cam: video}}")
+
+    out: dict[str, dict[str, str]] = {}
+    for group_name_any, group_val in raw.items():
+        group_name = str(group_name_any).strip()
+        if not group_name:
+            raise ValueError("Group name cannot be empty.")
+
+        cams: dict[str, str] = {}
+        if isinstance(group_val, str):
+            p = str(group_val)
+            cam = Path(p).stem
+            cams[cam] = p
+        elif isinstance(group_val, (list, tuple)):
+            for item in group_val:
+                if item is None:
+                    continue
+                p = str(item)
+                cam = Path(p).stem
+                if cam in cams:
+                    raise ValueError(f"Duplicate camera name '{cam}' in group '{group_name}'.")
+                cams[cam] = p
+        elif isinstance(group_val, dict):
+            for cam_name_any, video_path_any in group_val.items():
+                cam = str(cam_name_any).strip()
+                if not cam:
+                    raise ValueError(f"Empty camera name in group '{group_name}'.")
+                p = str(video_path_any)
+                if cam in cams:
+                    raise ValueError(f"Duplicate camera name '{cam}' in group '{group_name}'.")
+                cams[cam] = p
+        else:
+            raise ValueError(f"Invalid group entry for '{group_name}': expected list/dict, got {type(group_val).__name__}")
+
+        if len(cams) < 1:
+            raise ValueError(f"Group '{group_name}' must contain at least one video.")
+        out[group_name] = cams
+
+    return out
+
+
 def _as_label_config(cfg: dict[str, Any]) -> LabelConfig:
     base = _default_cfg()
     for k, v in cfg.items():
@@ -93,10 +151,13 @@ def _as_label_config(cfg: dict[str, Any]) -> LabelConfig:
     if isinstance(videos, str):
         videos = [videos]
 
+    groups = _normalize_groups(base.get("groups"))
+
     sam3 = base["sam3"]
     runtime = base["runtime"]
     return LabelConfig(
         videos=[str(v) for v in videos],
+        groups=groups,
         out=str(base["out"]),
         targets=targets,
         proposal_model=str(base["proposal_model"]),
@@ -165,8 +226,8 @@ def _draw_viz_overlay(
 
 def label_videos(cfg: dict[str, Any]) -> None:
     c = _as_label_config(cfg)
-    if not c.videos:
-        raise ValueError("No videos provided. Set `videos` in config or pass `--videos`.")
+    if not c.videos and not c.groups:
+        raise ValueError("No videos provided. Set `videos`/`groups` in config or pass `--videos`.")
     if not c.targets:
         raise ValueError("Targets cannot be empty.")
     if "cuda" in c.sam3_device.lower():
@@ -221,95 +282,146 @@ def label_videos(cfg: dict[str, Any]) -> None:
         },
         "runtime": {"device": c.runtime_device, "half": c.runtime_half},
     }
+    if c.groups:
+        meta["groups"] = c.groups
+    else:
+        meta["videos"] = c.videos
     meta_path.write_text(json.dumps(meta, indent=2))
 
     total_images = 0
     total_labels = 0
 
-    for video in c.videos:
-        video_path = Path(video)
-        cap, info = open_video(video_path)
-        stem = video_path.stem
-        warned_sam3_fallback = False
-        pbar = tqdm(iter_frames(cap, stride=c.frame_stride, max_frames=c.max_frames_per_video), desc=f"Labeling {stem}", unit="frame")
-        for frame_idx, frame in pbar:
-            name = f"{stem}_f{frame_idx:06d}"
-            subset = stable_split(name, c.seed, c.train_ratio, c.val_ratio)
-            h, w = frame.shape[:2]
+    def _iter_group_frames(caps: dict[str, cv2.VideoCapture], *, stride: int, max_frames: int) -> Any:
+        stride = max(1, int(stride))
+        kept = 0
+        raw_idx = -1
+        while True:
+            raw_idx += 1
+            frames: dict[str, np.ndarray] = {}
+            ok = True
+            for cam, cap in caps.items():
+                ret, frame = cap.read()
+                if not ret:
+                    ok = False
+                    break
+                frames[cam] = frame
+            if not ok:
+                break
+            if raw_idx % stride != 0:
+                continue
+            yield raw_idx, frames
+            kept += 1
+            if max_frames and kept >= max_frames:
+                break
 
-            proposals = proposer.propose(
-                frame,
-                conf=c.conf,
-                iou=c.iou,
-                target_to_id=target_to_id,
-                source_map=source_map,
-                min_box_area=c.min_box_area,
-                imgsz=c.proposal_imgsz if c.proposal_imgsz > 0 else None,
-            )
-            if not proposals:
-                if not c.keep_empty:
-                    continue
+    groups: dict[str, dict[str, str]]
+    if c.groups:
+        groups = c.groups
+    else:
+        groups = {Path(v).stem: {Path(v).stem: v} for v in c.videos}
+
+    for group_name, cam_to_video in groups.items():
+        caps: dict[str, cv2.VideoCapture] = {}
+        for cam, video in cam_to_video.items():
+            cap, _info = open_video(Path(video))
+            caps[cam] = cap
+
+        warned_sam3_fallback = False
+        pbar = tqdm(
+            _iter_group_frames(caps, stride=c.frame_stride, max_frames=c.max_frames_per_video),
+            desc=f"Labeling {group_name}",
+            unit="frame",
+        )
+        for frame_idx, frames in pbar:
+            split_key = f"{group_name}_f{frame_idx:06d}"
+            subset = stable_split(split_key, c.seed, c.train_ratio, c.val_ratio)
+
+            per_cam: dict[str, dict[str, Any]] = {}
+            any_labels = False
+
+            for cam, frame in frames.items():
+                h, w = frame.shape[:2]
+
+                proposals = proposer.propose(
+                    frame,
+                    conf=c.conf,
+                    iou=c.iou,
+                    target_to_id=target_to_id,
+                    source_map=source_map,
+                    min_box_area=c.min_box_area,
+                    imgsz=c.proposal_imgsz if c.proposal_imgsz > 0 else None,
+                )
+
+                dets: list[Det] = []
+                proposal_boxes = [p.det.xyxy for p in proposals]
+                prompts = [p.tgt_name for p in proposals]
+                refined = proposal_boxes
+                if proposal_boxes:
+                    try:
+                        refined = sam3.refine_xyxy_with_prompts(frame, proposal_boxes, prompts)
+                    except Exception as e:
+                        if not warned_sam3_fallback:
+                            print(f"⚠️ SAM3 refinement failed for group {group_name} (falling back to proposal boxes): {e}")
+                            warned_sam3_fallback = True
+                        refined = proposal_boxes
+
+                for p, xyxy in zip(proposals, refined):
+                    if area_xyxy(xyxy) < float(c.min_box_area):
+                        continue
+                    dets.append(Det(xyxy=xyxy, cls_id=p.det.cls_id, score=p.det.score))
+
+                if c.sam3_nms_iou > 0 and dets:
+                    by_cls: dict[int, list[Det]] = {}
+                    for d in dets:
+                        by_cls.setdefault(d.cls_id, []).append(d)
+                    dets = []
+                    for cls_id, cls_dets in by_cls.items():
+                        dets.extend(nms_xyxy(cls_dets, iou_thr=float(c.sam3_nms_iou)))
+
+                lines: list[str] = []
+                for d in dets:
+                    line = to_yolo_line(d.cls_id, d.xyxy, width=w, height=h)
+                    if line is not None:
+                        lines.append(line)
+
+                if lines:
+                    any_labels = True
+
+                per_cam[cam] = {"frame": frame, "proposals": proposals, "dets": dets, "lines": lines}
+
+            if not any_labels and not c.keep_empty:
+                continue
+
+            for cam, item in per_cam.items():
+                name = f"{group_name}_{cam}_f{frame_idx:06d}"
+                frame = item["frame"]
+                lines = item["lines"]
+
                 img_out = out_root / subset / "images" / f"{name}.jpg"
                 lbl_out = out_root / subset / "labels" / f"{name}.txt"
                 cv2.imwrite(str(img_out), frame)
-                lbl_out.write_text("")
+                lbl_out.write_text("\n".join(lines) + ("\n" if lines else ""))
                 total_images += 1
-                continue
+                total_labels += len(lines)
 
-            boxes = [p.det.xyxy for p in proposals]
-            prompts = [p.tgt_name for p in proposals]
-            try:
-                refined = sam3.refine_xyxy_with_prompts(frame, boxes, prompts)
-            except Exception as e:
-                if not warned_sam3_fallback:
-                    print(f"⚠️ SAM3 refinement failed for {stem} (falling back to proposal boxes): {e}")
-                    warned_sam3_fallback = True
-                refined = boxes
-
-            dets: list[Det] = []
-            for p, xyxy in zip(proposals, refined):
-                if area_xyxy(xyxy) < float(c.min_box_area):
-                    continue
-                dets.append(Det(xyxy=xyxy, cls_id=p.det.cls_id, score=p.det.score))
-
-            if c.sam3_nms_iou > 0:
-                by_cls: dict[int, list[Det]] = {}
-                for d in dets:
-                    by_cls.setdefault(d.cls_id, []).append(d)
-                dets = []
-                for cls_id, cls_dets in by_cls.items():
-                    dets.extend(nms_xyxy(cls_dets, iou_thr=float(c.sam3_nms_iou)))
-
-            lines: list[str] = []
-            for d in dets:
-                line = to_yolo_line(d.cls_id, d.xyxy, width=w, height=h)
-                if line is not None:
-                    lines.append(line)
-            if not lines and not c.keep_empty:
-                continue
-
-            img_out = out_root / subset / "images" / f"{name}.jpg"
-            lbl_out = out_root / subset / "labels" / f"{name}.txt"
-            cv2.imwrite(str(img_out), frame)
-            lbl_out.write_text("\n".join(lines) + ("\n" if lines else ""))
-            total_images += 1
-            total_labels += len(lines)
-
-            if c.save_viz:
-                proposal_dets = [p.det for p in proposals]
-                viz = _draw_viz_overlay(frame, proposal_dets=proposal_dets, refined_dets=dets, names=c.targets)
-                viz_out = out_root / "viz" / subset / f"{name}.jpg"
-                cv2.imwrite(str(viz_out), viz)
+                if c.save_viz:
+                    proposal_dets = [p.det for p in item["proposals"]]
+                    viz = _draw_viz_overlay(frame, proposal_dets=proposal_dets, refined_dets=item["dets"], names=c.targets)
+                    viz_out = out_root / "viz" / subset / f"{name}.jpg"
+                    cv2.imwrite(str(viz_out), viz)
 
             pbar.set_postfix(images=total_images, labels=total_labels)
 
-        cap.release()
+        for cap in caps.values():
+            cap.release()
 
     dataset_yaml = out_root / "dataset.yaml"
     dataset_yaml.write_text(
         "\n".join(
             [
-                f"path: {out_root.resolve()}",
+                # Keep dataset portable across machines / scratch paths.
+                # Ultralytics resolves relative `path` relative to this YAML file.
+                "path: .",
                 "train: train/images",
                 "val: val/images",
                 "test: test/images",

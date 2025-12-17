@@ -31,7 +31,7 @@ def _default_cfg() -> dict[str, Any]:
             "imgsz": 960,
             "conf": 0.35,
             "iou": 0.5,
-            "targets": "person,car,bus",
+            "targets": "person,car",
             "source_map": "truck=car,motorcycle=car,bicycle=car",
         },
         "tracker": {
@@ -130,7 +130,7 @@ def run_multiview(cfg: dict[str, Any]) -> None:
     out_cfg = base["output"]
     runtime_cfg = base["runtime"]
 
-    targets = _parse_targets(detector_cfg.get("targets", "person,car,bus"))
+    targets = _parse_targets(detector_cfg.get("targets", "person,car"))
     target_to_id = {n: i for i, n in enumerate(targets)}
     source_map = parse_kv_map(detector_cfg.get("source_map", ""))
 
@@ -179,7 +179,18 @@ def run_multiview(cfg: dict[str, Any]) -> None:
 
         anchor_cam = cam_names[0]
 
-        out_json = {"metadata": {"group": group_name, "cameras": {c: infos[c].__dict__ for c in cam_names}, "classes": targets, "model": model_path}, "frames": []}
+    def _camera_info(info: VideoInfo) -> dict[str, Any]:
+        return {"path": str(info.path), "width": info.width, "height": info.height, "fps": info.fps, "frame_count": info.frame_count}
+
+    out_json = {
+        "metadata": {
+            "group": group_name,
+            "cameras": {c: _camera_info(infos[c]) for c in cam_names},
+            "classes": targets,
+            "model": model_path,
+        },
+        "frames": [],
+    }
 
         write_video = bool(out_cfg.get("write_video", False))
         writer = None
@@ -282,4 +293,3 @@ def run_multiview(cfg: dict[str, Any]) -> None:
         out_path = output_root / f"{group_name}.json"
         out_path.write_text(json.dumps(out_json, indent=2))
         print(f"✅ Group {group_name}: wrote {out_path}" + (f" and {video_out_path}" if write_video else ""))
-

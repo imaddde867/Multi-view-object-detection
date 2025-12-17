@@ -1,7 +1,8 @@
-data: data/processed/sam3_autolabel/dataset.yaml
+data: data/processed/sam3_autolabel_allcams/dataset.yaml
 
-# Newer/stronger baseline than yolov8n; override if your Ultralytics build differs.
-model: yolo11m.pt
+# Default to a local checkpoint to avoid network downloads on HPC.
+# Override freely (e.g. yolov8m.pt / yolo11m.pt) if available.
+model: yolov8n.pt
 
 epochs: 100
 imgsz: 960
@@ -10,10 +11,9 @@ seed: 0
 workers: 8
 
 project: results/training
-name: sam3_autolabel_yolo11m
+name: sam3_autolabel_allcams_yolov8n
 
 runtime:
   # For multi-GPU on SLURM: "0,1" or "0,1,2,3"
   device: 0
   half: true
-

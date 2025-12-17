@@ -1,26 +1,33 @@
-videos:
-  - data/raw/testing_videos/Cam1.mp4
-  - data/raw/testing_videos/Cam2.mp4
-  - data/raw/testing_videos/Cam3.mp4
-  - data/raw/testing_videos/Cam4.mp4
-  - data/raw/testing_videos/Cam5.mp4
-  - data/raw/testing_videos/Cam6.mp4
-  - data/raw/testing_videos/Cam7.mp4
-  - data/raw/testing_videos/Cam8.mp4
+# Multi-view groups (pairs) to keep splits/frame sampling consistent across views.
+# For single unpaired videos, add a 1-video group (see `latest` below).
+groups:
+  g34:
+    cam3: data/raw/testing_videos/Cam3.mp4
+    cam4: data/raw/testing_videos/Cam4.mp4
+  g56:
+    cam5: data/raw/testing_videos/Cam5.mp4
+    cam6: data/raw/testing_videos/Cam6.mp4
+  g78:
+    cam7: data/raw/testing_videos/Cam7.mp4
+    cam8: data/raw/testing_videos/Cam8.mp4
+  latest:
+    cam_latest: data/raw/testing_videos/latest_video.MOV
 
-out: data/processed/sam3_autolabel
+out: data/processed/sam3_autolabel_allcams
 
-targets: person,car,bus
+# Exactly 2 classes (YOLO ids are in this order):
+#   0: person
+#   1: car
+targets: person,car
 
 # Stronger proposals help SAM3 converge on the right object masks.
-# Override on HPC with `--proposal-model yolo11m.pt` if available.
-proposal_model: yolov8n.pt
-# If your objects are small/crowded (e.g. Cam1/Cam2), bump this up (e.g. 1280 or 1536)
-# and/or use a larger proposal model (e.g. `yolov8x.pt` or `yolo11m.pt`).
-proposal_imgsz: 1280
-source_map: truck=car,motorcycle=car,bicycle=car
-conf: 0.35
-iou: 0.5
+# For high-recall autolabeling, use a larger proposal model and higher resolution.
+# Ensure the weights file exists locally on Puhti (compute nodes may not have network).
+proposal_model: yolo11m.pt
+proposal_imgsz: 1536
+source_map: truck=car,motorcycle=car,bicycle=car,bus=car
+conf: 0.15
+iou: 0.7
 frame_stride: 5
 max_frames_per_video: 4000
 train_ratio: 0.9

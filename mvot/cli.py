@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from mvot.dataset.verify import verify_dataset
 from mvot.labeling.pipeline import label_videos
 from mvot.system.run import run_multiview
 from mvot.training.train import train_yolo
@@ -71,6 +72,17 @@ def _cmd_run(sub: argparse.ArgumentParser) -> None:
     _add_common_io_args(sub)
 
 
+def _cmd_verify(sub: argparse.ArgumentParser) -> None:
+    sub.add_argument("--dataset", type=str, required=True, help="Path to dataset root or dataset.yaml.")
+    sub.add_argument(
+        "--expected-names",
+        type=str,
+        default="person,car",
+        help="Comma-separated expected class names (default: person,car).",
+    )
+    sub.add_argument("--no-pair-check", action="store_true", help="Skip multi-view pair consistency checks.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="mvot", description="SAM3 → YOLO → multi-view detect+track pipeline.")
     subparsers = parser.add_subparsers(dest="cmd", required=True)
@@ -83,6 +95,9 @@ def main() -> None:
 
     run_parser = subparsers.add_parser("run", help="Run multi-view detection + tracking using a system config.")
     _cmd_run(run_parser)
+
+    verify_parser = subparsers.add_parser("verify", help="Verify a YOLO dataset (format + multi-view consistency).")
+    _cmd_verify(verify_parser)
 
     args = parser.parse_args()
 
@@ -199,6 +214,28 @@ def main() -> None:
         if args.half:
             cfg["runtime"]["half"] = True
         run_multiview(cfg)
+        return
+
+    if args.cmd == "verify":
+        raw_expected = str(args.expected_names).strip()
+        expected = None if not raw_expected else [t.strip() for t in raw_expected.split(",") if t.strip()]
+        report = verify_dataset(args.dataset, expected_names=expected, check_pairs=not bool(args.no_pair_check))
+        for w in report.warnings:
+            print(f"⚠️ {w}")
+        if report.errors:
+            for e in report.errors:
+                print(f"❌ {e}")
+            raise SystemExit(f"Dataset verification failed ({len(report.errors)} error(s)).")
+
+        print(
+            "✅ Dataset OK\n"
+            f"  root: {report.root}\n"
+            f"  names: {report.names}\n"
+            f"  images: {report.images}\n"
+            f"  empty labels: {report.empty_labels}\n"
+            f"  boxes: {report.boxes_total}\n"
+            f"  boxes/class: {report.boxes_per_class}"
+        )
         return
 
     raise SystemExit(f"Unknown command: {args.cmd}")

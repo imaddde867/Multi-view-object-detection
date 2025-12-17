@@ -38,6 +38,12 @@ data/processed/sam3_autolabel/
   stats.json
 ```
 
+Sanity-check the dataset (format + multi-view consistency):
+
+```bash
+mvot verify --dataset data/processed/sam3_autolabel_allcams/dataset.yaml
+```
+
 ## 2) Train a stronger YOLO model
 
 Edit `config/train.yaml`, then:
