@@ -29,6 +29,11 @@ results/system/
 # Cache
 __pycache__/
 *.pyc
+
+# Local environments / build outputs
+.venv/
+*.egg-info/
+slurm-*.out
 scripts/__pycache__/demo_material/*.avi
 demo_material/*.pt
 demo_material/*.MOV
