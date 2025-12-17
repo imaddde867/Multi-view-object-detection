@@ -1,0 +1,43 @@
+# Example multi-view system config.
+#
+# Define cameras once, then compose any camera pairs/groups under `groups`.
+
+cameras:
+  cam3:
+    source: data/raw/testing_videos/Cam3.mp4
+  cam4:
+    source: data/raw/testing_videos/Cam4.mp4
+
+groups:
+  g34: [cam3, cam4]
+
+detector:
+  model: demo_material/yolov8m_best.pt
+  imgsz: 960
+  conf: 0.35
+  iou: 0.5
+  targets: person,car,bus
+  source_map: truck=car,motorcycle=car,bicycle=car
+
+tracker:
+  max_age: 30
+  match_threshold: 0.5
+  global_match_threshold: 0.75
+  embedder:
+    # Options: "colorhist" (no torch), "torch_resnet18" (best)
+    type: colorhist
+
+run:
+  frame_stride: 1
+  max_frames: null
+  groups: [] # empty means run all groups
+
+output:
+  dir: results/system
+  write_video: true
+  video_fps: 0.0
+
+runtime:
+  device: cuda:0
+  half: true
+

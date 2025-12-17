@@ -1,0 +1,19 @@
+data: data/processed/sam3_autolabel/dataset.yaml
+
+# Newer/stronger baseline than yolov8n; override if your Ultralytics build differs.
+model: yolo11m.pt
+
+epochs: 100
+imgsz: 960
+batch: 16
+seed: 0
+workers: 8
+
+project: results/training
+name: sam3_autolabel_yolo11m
+
+runtime:
+  # For multi-GPU on SLURM: "0,1" or "0,1,2,3"
+  device: 0
+  half: true
+

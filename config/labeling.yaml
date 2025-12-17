@@ -1,0 +1,35 @@
+videos:
+  - data/raw/testing_videos/Cam3.mp4
+  - data/raw/testing_videos/Cam4.mp4
+
+out: data/processed/sam3_autolabel
+
+targets: person,car,bus
+
+# Stronger proposals help SAM3 converge on the right object masks.
+# Override on HPC with `--proposal-model yolo11m.pt` if available.
+proposal_model: yolov8n.pt
+source_map: truck=car,motorcycle=car,bicycle=car
+conf: 0.35
+iou: 0.5
+frame_stride: 5
+max_frames_per_video: 4000
+train_ratio: 0.9
+val_ratio: 0.1
+seed: 0
+min_box_area: 400
+keep_empty: false
+save_viz: false
+
+sam3:
+  checkpoint: ""
+  load_from_hf: false
+  device: cuda
+  confidence: 0.5
+  mask_close: 7
+  nms_iou: 0.5
+
+runtime:
+  device: cuda:0
+  half: true
+

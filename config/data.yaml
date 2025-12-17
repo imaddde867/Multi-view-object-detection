@@ -1,6 +1,0 @@
-train: data_train_val_test_car_person/train/images
-val:   data_train_val_test_car_person/val/images
-test:  data_train_val_test_car_person/test/images
-
-nc: 2  # number of classes, adjust to your dataset
-names: ['person', 'car']  # your class names

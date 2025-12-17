@@ -1,10 +1,15 @@
 # YOLO trained models
 *.pt
 
+# OS cruft
+.DS_Store
+
 # Dataset folders
 data/processed/
 data/raw/multiclass_ground_truth/
 data/raw/multiclass_ground_truth_images/
+data/raw/testing_videos/
+data/raw/phone/
 
 # Legacy ignore (in case they are created in root)
 data_train_val_test_car_person/
@@ -18,9 +23,15 @@ runs/
 results/Detection/
 results/Detection_2Class/
 results/Detection_Balanced/
+results/training/
+results/system/
 
 # Cache
 __pycache__/
 *.pyc
 scripts/__pycache__/demo_material/*.avi
 demo_material/*.pt
+demo_material/*.MOV
+demo_material/*.mov
+demo_material/*.mp4
+demo_material/*.avi

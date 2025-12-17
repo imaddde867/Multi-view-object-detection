@@ -2,4 +2,5 @@ ultralytics
 opencv-python
 numpy
 scipy
-deep-sort-realtime
+pyyaml
+tqdm

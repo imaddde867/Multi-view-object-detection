@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mvot"
+version = "0.1.0"
+description = "Multi-view object detection + tracking pipeline (SAM3 → YOLO → multi-camera tracking)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "opencv-python",
+  "pyyaml",
+  "scipy",
+  "tqdm",
+  "ultralytics",
+]
+
+[project.optional-dependencies]
+tracking = [
+  "torch",
+]
+sam3 = [
+  # SAM3 is not published on PyPI; install from source per docs.
+]
+
+[project.scripts]
+mvot = "mvot.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mvot*"]
+
