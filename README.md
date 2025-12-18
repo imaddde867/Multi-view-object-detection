@@ -6,6 +6,17 @@ This repo implements an end-to-end pipeline for multi-view detection and trackin
 2) Train a YOLO detector.
 3) Run multi-view detection + tracking with camera groups.
 
+## Visual showcase
+
+<p align="center">
+  <img src="data/processed/showcase/sam3_autolabel_v2/viz/val/Cam3_f000070.jpg" width="49%" alt="SAM3 auto-labeling visualization sample" />
+  <img src="results/showcase/training/sam3_autolabel_v2/val_batch0_pred.jpg" width="49%" alt="YOLO validation predictions sample" />
+</p>
+
+<p align="center">
+  <em>Left: SAM3 auto-labeling overlay. Right: YOLO validation predictions.</em>
+</p>
+
 ## Showcase artifacts (tracked)
 
 - Labeling samples: `data/processed/showcase/sam3_autolabel_v2/` (viz + metadata)
