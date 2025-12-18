@@ -17,3 +17,4 @@ __pycache__/
 docs/reports/*.docx
 demo*.mp4
 demo*.mov
+notes.txt
