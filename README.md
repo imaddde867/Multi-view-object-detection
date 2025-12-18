@@ -1,18 +1,16 @@
 # Multi-View Object Detection & Tracking (SAM3 → YOLO → Multi-Camera)
 
-Production-oriented, end-to-end pipeline:
+This repo implements an end-to-end pipeline for multi-view detection and tracking across synchronized cameras:
 
-1) **SAM3-based video labeling** (YOLO proposals → SAM3 mask refinement → tight YOLO boxes)  
-2) **YOLO training** (newer/stronger models supported)  
-3) **Multi-view detection + tracking** with configurable camera groups (1+2, 3+4, 5+6, …)
+1) Label videos with YOLO proposals + SAM3 mask refinement.
+2) Train a YOLO detector.
+3) Run multi-view detection + tracking with camera groups.
 
-## Showcase (tracked artifacts)
+## Showcase artifacts (tracked)
 
-These folders contain curated, lightweight outputs for demos and reporting:
-
-- Labeling: `data/processed/showcase/sam3_autolabel_v2/` (viz samples + metadata)
-- Training: `results/showcase/training/sam3_autolabel_v2/` (metrics/plots)
-- Evaluation: `results/showcase/system/sam3_autolabel_v2/` (`g34_demo.mp4` + `g34.json`)
+- Labeling samples: `data/processed/showcase/sam3_autolabel_v2/` (viz + metadata)
+- Training metrics: `results/showcase/training/sam3_autolabel_v2/`
+- Evaluation demo: `results/showcase/system/sam3_autolabel_v2/` (`g34_demo.mp4`, `g34.json`)
 
 ## Install
 
@@ -21,25 +19,25 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Optional extras:
+Optional:
 - `pip install -e ".[tracking]"` to enable the `torch_resnet18` embedder.
 
-### SAM3 install (required for labeling)
+## SAM3
 
-SAM3 is installed from source. Follow https://github.com/facebookresearch/sam3 and ensure `sam3` is importable in the same environment as this repo.
+SAM3 is installed from source. Follow https://github.com/facebookresearch/sam3 and ensure `sam3` is importable in the same environment.
 
-## 1) Data generation (SAM3 → YOLO format)
+## 1) Label videos (SAM3 → YOLO)
 
-Edit `config/labeling.yaml` (videos, output path, SAM3 checkpoint), then run:
+Edit `config/labeling.yaml`, then run:
 
 ```bash
 multiview label --config config/labeling.yaml --sam3-checkpoint /path/to/sam3.pt
 ```
 
-Outputs a standard Ultralytics dataset (location comes from `out:` in the config):
+Dataset layout:
 
 ```text
-data/processed/sam3_autolabel_allcams/
+data/processed/<dataset_name>/
   dataset.yaml
   train/images/*.jpg
   train/labels/*.txt
@@ -49,13 +47,13 @@ data/processed/sam3_autolabel_allcams/
   stats.json
 ```
 
-Sanity-check the dataset (format + multi-view consistency):
+Verify:
 
 ```bash
-multiview verify --dataset data/processed/sam3_autolabel_allcams/dataset.yaml
+multiview verify --dataset data/processed/<dataset_name>/dataset.yaml
 ```
 
-## 2) Train a stronger YOLO model
+## 2) Train YOLO
 
 Edit `config/train.yaml`, then:
 
@@ -63,19 +61,15 @@ Edit `config/train.yaml`, then:
 multiview train --config config/train.yaml
 ```
 
-Notes:
-- Default `model: yolov8n.pt` is configurable; set to any Ultralytics-supported checkpoint.
-- Multi-GPU: set `runtime.device: "0,1"` (or `"0,1,2,3"`) in `config/train.yaml` and request multiple GPUs in SLURM.
+## 3) Run multi-view detection + tracking
 
-## 3) Multi-view detection + tracking (camera pairs/groups)
-
-Define cameras + groups in `config/system.yaml`, then:
+Edit `config/system.yaml`, then:
 
 ```bash
 multiview run --config config/system.yaml
 ```
 
-This writes per-group JSON to `results/system/` and (optionally) rendered videos.
+Outputs per-group JSON and optional videos.
 
 ## Data and outputs
 
@@ -90,10 +84,9 @@ Showcase paths:
 
 ## SLURM
 
-Example job files:
-- `slurm/label.sbatch`
-- `slurm/train.sbatch`
-- `slurm/run.sbatch`
+See `slurm/label.sbatch`, `slurm/train.sbatch`, and `slurm/run.sbatch`.
+Submit the full pipeline with:
 
-End-to-end submission helper:
-- `bash slurm/submit_pipeline.sh`
+```bash
+bash slurm/submit_pipeline.sh
+```
