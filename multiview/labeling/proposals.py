@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from mvot.utils.boxes import Det
+from multiview.utils.boxes import Det
 
 
 def parse_kv_map(mapping_str: str) -> dict[str, str]:

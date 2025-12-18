@@ -25,7 +25,7 @@ SAM3 is installed from source. Follow https://github.com/facebookresearch/sam3 a
 Edit `config/labeling.yaml` (videos, output path, SAM3 checkpoint), then run:
 
 ```bash
-mvot label --config config/labeling.yaml --sam3-checkpoint /path/to/sam3.pt
+multiview label --config config/labeling.yaml --sam3-checkpoint /path/to/sam3.pt
 ```
 
 Outputs a standard Ultralytics dataset (location comes from `out:` in the config):
@@ -44,7 +44,7 @@ data/processed/sam3_autolabel_allcams/
 Sanity-check the dataset (format + multi-view consistency):
 
 ```bash
-mvot verify --dataset data/processed/sam3_autolabel_allcams/dataset.yaml
+multiview verify --dataset data/processed/sam3_autolabel_allcams/dataset.yaml
 ```
 
 ## 2) Train a stronger YOLO model
@@ -52,7 +52,7 @@ mvot verify --dataset data/processed/sam3_autolabel_allcams/dataset.yaml
 Edit `config/train.yaml`, then:
 
 ```bash
-mvot train --config config/train.yaml
+multiview train --config config/train.yaml
 ```
 
 Notes:
@@ -64,15 +64,16 @@ Notes:
 Define cameras + groups in `config/system.yaml`, then:
 
 ```bash
-mvot run --config config/system.yaml
+multiview run --config config/system.yaml
 ```
 
 This writes per-group JSON to `results/system/` and (optionally) rendered videos.
 
 ## Data and outputs
 
-- `data/raw/` and `data/processed/` are inputs/outputs and are intentionally ignored by git.
-- `results/` is also ignored; it contains training runs and system outputs.
+- `data/raw/` and most of `data/processed/` are ignored by git.
+- Track curated samples in `data/processed/showcase/`.
+- Most of `results/` is ignored; track demos and proof artifacts in `results/showcase/`.
 
 ## SLURM
 

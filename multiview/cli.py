@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from mvot.dataset.verify import verify_dataset
-from mvot.labeling.pipeline import label_videos
-from mvot.system.run import run_multiview
-from mvot.training.train import train_yolo
-from mvot.utils.yaml import load_yaml, merge_dicts
+from multiview.dataset.verify import verify_dataset
+from multiview.labeling.pipeline import label_videos
+from multiview.system.run import run_multiview
+from multiview.training.train import train_yolo
+from multiview.utils.yaml import load_yaml, merge_dicts
 
 
 def _add_common_io_args(parser: argparse.ArgumentParser) -> None:
@@ -84,7 +84,7 @@ def _cmd_verify(sub: argparse.ArgumentParser) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="mvot", description="SAM3 → YOLO → multi-view detect+track pipeline.")
+    parser = argparse.ArgumentParser(prog="multiview", description="SAM3 → YOLO → multi-view detect+track pipeline.")
     subparsers = parser.add_subparsers(dest="cmd", required=True)
 
     label_parser = subparsers.add_parser("label", help="Generate YOLO dataset from videos using YOLO proposals + SAM3 refinement.")

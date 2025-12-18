@@ -1,6 +1,10 @@
 /data/raw/
-/data/processed/
-/results/
+/data/processed/*
+!/data/processed/showcase/
+!/data/processed/showcase/**
+/results/*
+!/results/showcase/
+!/results/showcase/**
 __pycache__/
 *.py[cod]
 .DS_Store

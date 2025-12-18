@@ -43,6 +43,7 @@ run:
   groups: [] # empty means run all groups
 
 output:
+  # For tracked demos, set to results/showcase/<run_name>.
   dir: results/system
   write_video: true
   video_fps: 0.0

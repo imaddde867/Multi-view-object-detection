@@ -104,7 +104,7 @@ def train_yolo(cfg: dict[str, Any]) -> None:
     project_dir = Path(c.project)
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / run_name).mkdir(parents=True, exist_ok=True)
-    (project_dir / run_name / "mvot_train_config.json").write_text(json.dumps(c.__dict__, indent=2))
+    (project_dir / run_name / "multiview_train_config.json").write_text(json.dumps(c.__dict__, indent=2))
 
     model = YOLO(c.model)
 

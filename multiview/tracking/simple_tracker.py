@@ -5,8 +5,8 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from mvot.tracking.embeddings import Embedder, cosine_sim
-from mvot.utils.boxes import Det
+from multiview.tracking.embeddings import Embedder, cosine_sim
+from multiview.utils.boxes import Det
 
 
 def iou_xyxy(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:

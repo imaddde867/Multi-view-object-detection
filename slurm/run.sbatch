@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=24:00:00
-#SBATCH -J mvot_run
+#SBATCH -J multiview_run
 #SBATCH -o slurm-%x-%j.out
 
 set -euo pipefail
@@ -21,5 +21,5 @@ if [[ -f ".venv/bin/activate" ]]; then
   source .venv/bin/activate
 fi
 
-RUN_CONFIG="${MVOT_RUN_CONFIG:-config/system.yaml}"
-mvot run --config "$RUN_CONFIG"
+RUN_CONFIG="${MULTIVIEW_RUN_CONFIG:-config/system.yaml}"
+multiview run --config "$RUN_CONFIG"

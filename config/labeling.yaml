@@ -13,6 +13,7 @@ groups:
   latest:
     cam_latest: data/raw/testing_videos/latest_video.MOV
 
+# For tracked samples, set to data/processed/showcase/<dataset_name>.
 out: data/processed/sam3_autolabel_allcams
 
 # Exactly 2 classes (YOLO ids are in this order):

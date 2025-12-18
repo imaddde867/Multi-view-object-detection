@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from mvot.tracking.embeddings import cosine_sim
+from multiview.tracking.embeddings import cosine_sim
 
 
 @dataclass(frozen=True)

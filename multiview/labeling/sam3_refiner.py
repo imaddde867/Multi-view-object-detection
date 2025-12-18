@@ -8,7 +8,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from mvot.labeling.masks import clean_binary_mask, mask_to_xyxy
+from multiview.labeling.masks import clean_binary_mask, mask_to_xyxy
 
 
 @dataclass(frozen=True)

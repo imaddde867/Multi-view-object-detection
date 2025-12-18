@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=24:00:00
-#SBATCH -J mvot_train
+#SBATCH -J multiview_train
 #SBATCH -o slurm-%x-%j.out
 
 set -euo pipefail
@@ -23,5 +23,5 @@ if [[ -f ".venv/bin/activate" ]]; then
   source .venv/bin/activate
 fi
 
-TRAIN_CONFIG="${MVOT_TRAIN_CONFIG:-config/train.yaml}"
-mvot train --config "$TRAIN_CONFIG"
+TRAIN_CONFIG="${MULTIVIEW_TRAIN_CONFIG:-config/train.yaml}"
+multiview train --config "$TRAIN_CONFIG"
