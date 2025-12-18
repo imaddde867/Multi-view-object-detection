@@ -10,8 +10,6 @@
 
 set -euo pipefail
 
-# NOTE: Update account/partition/GPU settings above to match your cluster.
-
 module purge || true
 module load pytorch/2.7 || true
 

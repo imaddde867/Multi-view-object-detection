@@ -10,22 +10,18 @@
 
 set -euo pipefail
 
-# NOTE: Update account/partition/GPU settings above to match your cluster.
-
 module purge || true
 module load pytorch/2.7 || true
 
 python -V
 nvidia-smi || true
 
-# Run from repo root (defaults to directory where you called sbatch).
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
-# Activate repo-local venv (recommended).
+# Activate repo-local venv
 if [[ -f ".venv/bin/activate" ]]; then
   source .venv/bin/activate
 fi
 
-# For 2-4 GPUs, request more GPUs and set `runtime.device: "0,1"` (or "0,1,2,3") in config/train.yaml.
 TRAIN_CONFIG="${MVOT_TRAIN_CONFIG:-config/train.yaml}"
 mvot train --config "$TRAIN_CONFIG"

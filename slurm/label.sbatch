@@ -10,15 +10,13 @@
 
 set -euo pipefail
 
-# NOTE: Update account/partition/GPU settings above to match your cluster.
-
 module purge || true
 module load pytorch/2.7 || true
 
 python -V
 nvidia-smi || true
 
-# Run from repo root (defaults to directory where you called sbatch).
+# Run from repo root
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
 # Activate repo-local venv (recommended).
@@ -26,7 +24,7 @@ if [[ -f ".venv/bin/activate" ]]; then
   source .venv/bin/activate
 fi
 
-# If using HuggingFace-based checkpoints, keep cache in scratch.
+# Keeping cache in scratch.
 export HF_HOME="${HF_HOME:-/scratch/project_2015432/exp/.hf}"
 
 # Label videos with YOLO proposals + SAM3 refinement.

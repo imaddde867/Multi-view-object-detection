@@ -84,7 +84,6 @@ class SimpleTracker:
                 cost[i, j] = 1.0 - match_score
 
         row_ind, col_ind = linear_sum_assignment(cost)
-        assigned_tracks = set()
         assigned_dets = set()
 
         for i, j in zip(row_ind.tolist(), col_ind.tolist()):
@@ -97,7 +96,6 @@ class SimpleTracker:
             trk.embedding = det_embeddings[j]
             trk.age = 0
             trk.hits += 1
-            assigned_tracks.add(i)
             assigned_dets.add(j)
 
         for j, det in enumerate(dets):
