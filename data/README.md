@@ -9,8 +9,8 @@ This repo keeps data out of git. Place inputs/outputs under these paths:
 Example layout:
 
 ```
-data/raw/session_01/Cam1.mp4
-data/raw/session_01/Cam2.mp4
+data/raw/session_01/Cam5.mp4
+data/raw/session_01/Cam6.mp4
 data/processed/sam3_autolabel_allcams/dataset.yaml
 ```
 
