@@ -17,7 +17,7 @@
       "car",
       "bus"
     ],
-    "proposal_model": "yolo11m.pt",
+    "proposal_model": "checkpoints/yolo/yolo11m.pt",
     "source_map": "truck=car,motorcycle=car,bicycle=car",
     "conf": 0.15,
     "iou": 0.7,
@@ -29,7 +29,7 @@
     "min_box_area": 400,
     "keep_empty": false,
     "save_viz": true,
-    "sam3_checkpoint": "/scratch/project_2015432/exp/checkpoints/sam3/sam3.pt",
+    "sam3_checkpoint": "checkpoints/sam3/sam3.pt",
     "sam3_load_from_hf": false,
     "sam3_device": "cuda",
     "sam3_confidence": 0.5,
@@ -37,5 +37,6 @@
     "sam3_nms_iou": 0.5,
     "runtime_device": "",
     "runtime_half": false
-  }
+  },
+  "sam3_checkpoint": "checkpoints/sam3/sam3.pt"
 }

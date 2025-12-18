@@ -24,7 +24,7 @@ class TrainConfig:
 def _default_cfg() -> dict[str, Any]:
     return {
         "data": "",
-        "model": "yolo11m.pt",
+        "model": "checkpoints/yolo/yolo11m.pt",
         "epochs": 100,
         "imgsz": 960,
         "batch": 16,

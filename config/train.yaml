@@ -1,8 +1,8 @@
-data: data/processed/sam3_autolabel_allcams/dataset.yaml
+data: data/processed/sam3_autolabel_v2/dataset.yaml
 
 # Default to a local checkpoint to avoid network downloads on HPC.
-# Override freely (e.g. yolov8m.pt / yolo11m.pt) if available.
-model: yolov8n.pt
+# Override freely if you want a different base model.
+model: checkpoints/yolo/yolo11m.pt
 
 epochs: 100
 imgsz: 960
@@ -11,7 +11,8 @@ seed: 0
 workers: 8
 
 project: results/training  # For tracked runs, use results/showcase/training/<run_name>
-name: sam3_autolabel_allcams_yolov8n
+# Change the name to avoid overwriting an existing run.
+name: sam3_autolabel_v2
 
 runtime:
   # For multi-GPU on SLURM: "0,1" or "0,1,2,3"

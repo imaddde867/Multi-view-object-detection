@@ -9,9 +9,11 @@ This repo keeps data out of git. Place inputs/outputs under these paths:
 Example layout:
 
 ```
-data/raw/session_01/Cam5.mp4
-data/raw/session_01/Cam6.mp4
-data/processed/sam3_autolabel_allcams/dataset.yaml
+data/raw/testing_videos/Cam5.mp4
+data/raw/testing_videos/Cam6.mp4
+data/raw/multiclass_ground_truth/...
+data/raw/multiclass_ground_truth_images/...
+data/processed/sam3_autolabel_v2/dataset.yaml
 ```
 
 Large artifacts (datasets, runs, weights) should live outside git; track only curated samples in `data/processed/showcase/`.

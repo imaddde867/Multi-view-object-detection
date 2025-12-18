@@ -31,6 +31,18 @@ Use the tracked artifacts for a quick walkthrough:
 - Training metrics: `results/showcase/training/sam3_autolabel_v2/`
 - Evaluation demo: `results/showcase/system/sam3_autolabel_v2/` (`g34_demo.mp4`, `g34.json`)
 
+## Local assets (offline-ready)
+
+This workspace contains the full assets needed to work offline:
+
+- Raw videos: `data/raw/testing_videos/*.mp4` (and `latest_video.MOV`)
+- Ground truth: `data/raw/multiclass_ground_truth/`, `data/raw/multiclass_ground_truth_images/`
+- Processed datasets: `data/processed/sam3_autolabel_v2/` (plus `_debug_cam1`, `_demo_viz_v1`, `_smoke_sam3`)
+- YOLO base weights: `checkpoints/yolo/*.pt`
+- SAM3 checkpoint: `checkpoints/sam3/sam3.pt`
+- Training outputs: `results/training/sam3_autolabel_v2/` (includes `weights/best.pt`)
+- MLflow runs: `runs/`
+
 ## Install
 
 ```bash
@@ -43,15 +55,23 @@ Optional:
 
 ## SAM3
 
-SAM3 is installed from source. Follow https://github.com/facebookresearch/sam3 and ensure `sam3` is importable in the same environment.
+SAM3 source is included locally under `sam3/` for offline use. Install it with:
+
+```bash
+pip install -e sam3
+```
+
+If you prefer a separate clone, follow https://github.com/facebookresearch/sam3 and ensure `sam3` is importable.
 
 ## 1) Label videos (SAM3 → YOLO)
 
 Edit `config/labeling.yaml`, then run:
 
 ```bash
-multiview label --config config/labeling.yaml --sam3-checkpoint /path/to/sam3.pt
+multiview label --config config/labeling.yaml
 ```
+
+To override the SAM3 checkpoint, pass `--sam3-checkpoint /path/to/sam3.pt`.
 
 Dataset layout:
 
@@ -95,6 +115,7 @@ Outputs per-group JSON and optional videos.
 - `data/raw/` and most of `data/processed/` are ignored by git.
 - Track curated samples in `data/processed/showcase/`.
 - Most of `results/` is ignored; track demos and proof artifacts in `results/showcase/`.
+- Large local assets also live in `checkpoints/`, `sam3/`, and `runs/` (kept out of git).
 
 Showcase paths:
 - Labeling: set `out: data/processed/showcase/<dataset_name>` in `config/labeling.yaml`.

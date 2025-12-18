@@ -5,8 +5,15 @@
 /results/*
 !/results/showcase/
 !/results/showcase/**
+/archives/
+/checkpoints/
+/sam3/
+/runs/
 __pycache__/
 *.py[cod]
 .DS_Store
 .venv/
 *.egg-info/
+docs/reports/*.docx
+demo*.mp4
+demo*.mov

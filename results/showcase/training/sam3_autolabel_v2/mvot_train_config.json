@@ -1,6 +1,6 @@
 {
   "data": "data/processed/sam3_autolabel_v2/dataset.yaml",
-  "model": "yolo11m.pt",
+  "model": "checkpoints/yolo/yolo11m.pt",
   "epochs": 100,
   "imgsz": 960,
   "batch": 16,

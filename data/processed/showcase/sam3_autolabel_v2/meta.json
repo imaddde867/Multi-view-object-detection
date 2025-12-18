@@ -4,7 +4,7 @@
     "car",
     "bus"
   ],
-  "proposal_model": "yolo11m.pt",
+  "proposal_model": "checkpoints/yolo/yolo11m.pt",
   "source_map": {
     "truck": "car",
     "motorcycle": "car",
@@ -15,7 +15,7 @@
   "frame_stride": 5,
   "seed": 0,
   "sam3": {
-    "checkpoint": "/scratch/project_2015432/exp/checkpoints/sam3/sam3.pt",
+    "checkpoint": "checkpoints/sam3/sam3.pt",
     "load_from_hf": false,
     "device": "cuda",
     "confidence": 0.5,

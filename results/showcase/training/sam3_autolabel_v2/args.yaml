@@ -1,6 +1,6 @@
 task: detect
 mode: train
-model: yolo11m.pt
+model: checkpoints/yolo/yolo11m.pt
 data: data/processed/sam3_autolabel_v2/dataset.yaml
 epochs: 100
 time: null
@@ -103,4 +103,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: botsort.yaml
-save_dir: /scratch/project_2015432/exp/Multi-view-object-detection/results/training/sam3_autolabel_v2
+save_dir: results/training/sam3_autolabel_v2

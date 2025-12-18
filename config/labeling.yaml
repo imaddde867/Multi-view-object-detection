@@ -14,19 +14,20 @@ groups:
     cam_latest: data/raw/testing_videos/latest_video.MOV
 
 # For tracked samples, set to data/processed/showcase/<dataset_name>.
-out: data/processed/sam3_autolabel_allcams
+# Change this if you want to avoid overwriting an existing dataset.
+out: data/processed/sam3_autolabel_v2
 
 # Exactly 2 classes (YOLO ids are in this order):
 #   0: person
 #   1: car
-targets: person,car
+targets: person,car,bus
 
 # Stronger proposals help SAM3 converge on the right object masks.
 # For high-recall autolabeling, use a larger proposal model and higher resolution.
 # Ensure the weights file exists locally on Puhti (compute nodes may not have network).
-proposal_model: yolo11m.pt
+proposal_model: checkpoints/yolo/yolo11m.pt
 proposal_imgsz: 1536
-source_map: truck=car,motorcycle=car,bicycle=car,bus=car
+source_map: truck=car,motorcycle=car,bicycle=car
 conf: 0.15
 iou: 0.7
 frame_stride: 5
@@ -39,7 +40,7 @@ keep_empty: false
 save_viz: false
 
 sam3:
-  checkpoint: ""
+  checkpoint: checkpoints/sam3/sam3.pt
   load_from_hf: false
   device: cuda
   confidence: 0.5

@@ -47,7 +47,7 @@ def _cmd_label(sub: argparse.ArgumentParser) -> None:
 def _cmd_train(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--config", type=str, default="", help="Optional YAML config; CLI args override it.")
     sub.add_argument("--data", type=str, default="", help="Path to dataset.yaml.")
-    sub.add_argument("--model", type=str, default="", help="Model weights (e.g., yolo11m.pt).")
+    sub.add_argument("--model", type=str, default="", help="Model weights (e.g., checkpoints/yolo/yolo11m.pt).")
     sub.add_argument("--epochs", type=int, default=-1, help="Epochs.")
     sub.add_argument("--imgsz", type=int, default=-1, help="Image size.")
     sub.add_argument("--batch", type=int, default=-1, help="Batch size.")
