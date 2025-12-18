@@ -1,0 +1,41 @@
+{
+  "images": 3104,
+  "labels": 34198,
+  "config": {
+    "videos": [
+      "data/raw/testing_videos/Cam3.mp4",
+      "data/raw/testing_videos/Cam4.mp4",
+      "data/raw/testing_videos/Cam5.mp4",
+      "data/raw/testing_videos/Cam6.mp4",
+      "data/raw/testing_videos/Cam7.mp4",
+      "data/raw/testing_videos/Cam8.mp4",
+      "data/raw/testing_videos/latest_video.MOV"
+    ],
+    "out": "data/processed/sam3_autolabel_v2",
+    "targets": [
+      "person",
+      "car",
+      "bus"
+    ],
+    "proposal_model": "yolo11m.pt",
+    "source_map": "truck=car,motorcycle=car,bicycle=car",
+    "conf": 0.15,
+    "iou": 0.7,
+    "frame_stride": 5,
+    "max_frames_per_video": 4000,
+    "train_ratio": 0.9,
+    "val_ratio": 0.1,
+    "seed": 0,
+    "min_box_area": 400,
+    "keep_empty": false,
+    "save_viz": true,
+    "sam3_checkpoint": "/scratch/project_2015432/exp/checkpoints/sam3/sam3.pt",
+    "sam3_load_from_hf": false,
+    "sam3_device": "cuda",
+    "sam3_confidence": 0.5,
+    "mask_close": 7,
+    "sam3_nms_iou": 0.5,
+    "runtime_device": "",
+    "runtime_half": false
+  }
+}

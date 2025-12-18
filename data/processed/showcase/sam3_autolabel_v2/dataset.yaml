@@ -1,0 +1,7 @@
+path: /scratch/project_2015432/exp/Multi-view-object-detection/data/processed/sam3_autolabel_v2
+train: train/images
+val: val/images
+test: test/images
+
+nc: 3
+names: ['person', 'car', 'bus']

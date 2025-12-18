@@ -1,0 +1,13 @@
+{
+  "data": "data/processed/sam3_autolabel_v2/dataset.yaml",
+  "model": "yolo11m.pt",
+  "epochs": 100,
+  "imgsz": 960,
+  "batch": 16,
+  "project": "results/training",
+  "name": "sam3_autolabel_v2",
+  "seed": 0,
+  "workers": 8,
+  "device": "",
+  "half": false
+}

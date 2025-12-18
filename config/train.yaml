@@ -10,7 +10,7 @@ batch: 16
 seed: 0
 workers: 8
 
-project: results/training
+project: results/training  # For tracked runs, use results/showcase/training/<run_name>
 name: sam3_autolabel_allcams_yolov8n
 
 runtime:

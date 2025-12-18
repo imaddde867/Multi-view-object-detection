@@ -6,6 +6,14 @@ Production-oriented, end-to-end pipeline:
 2) **YOLO training** (newer/stronger models supported)  
 3) **Multi-view detection + tracking** with configurable camera groups (1+2, 3+4, 5+6, …)
 
+## Showcase (tracked artifacts)
+
+These folders contain curated, lightweight outputs for demos and reporting:
+
+- Labeling: `data/processed/showcase/sam3_autolabel_v2/` (viz samples + metadata)
+- Training: `results/showcase/training/sam3_autolabel_v2/` (metrics/plots)
+- Evaluation: `results/showcase/system/sam3_autolabel_v2/` (`g34_demo.mp4` + `g34.json`)
+
 ## Install
 
 ```bash
@@ -74,6 +82,11 @@ This writes per-group JSON to `results/system/` and (optionally) rendered videos
 - `data/raw/` and most of `data/processed/` are ignored by git.
 - Track curated samples in `data/processed/showcase/`.
 - Most of `results/` is ignored; track demos and proof artifacts in `results/showcase/`.
+
+Showcase paths:
+- Labeling: set `out: data/processed/showcase/<dataset_name>` in `config/labeling.yaml`.
+- Training: set `project: results/showcase/training` in `config/train.yaml`.
+- Evaluation: set `output.dir: results/showcase/system/<run_name>` in `config/system.yaml`.
 
 ## SLURM
 

@@ -1,0 +1,29 @@
+{
+  "targets": [
+    "person",
+    "car",
+    "bus"
+  ],
+  "proposal_model": "yolo11m.pt",
+  "source_map": {
+    "truck": "car",
+    "motorcycle": "car",
+    "bicycle": "car"
+  },
+  "conf": 0.15,
+  "iou": 0.7,
+  "frame_stride": 5,
+  "seed": 0,
+  "sam3": {
+    "checkpoint": "/scratch/project_2015432/exp/checkpoints/sam3/sam3.pt",
+    "load_from_hf": false,
+    "device": "cuda",
+    "confidence": 0.5,
+    "mask_close": 7,
+    "nms_iou": 0.5
+  },
+  "runtime": {
+    "device": "",
+    "half": false
+  }
+}
