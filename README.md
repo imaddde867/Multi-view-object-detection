@@ -17,6 +17,14 @@ This repo implements an end-to-end pipeline for multi-view detection and trackin
   <em>Left: SAM3 auto-labeling overlay. Right: YOLO validation predictions.</em>
 </p>
 
+## Demo (no training required)
+
+Use the tracked artifacts for a quick walkthrough:
+
+- Labeling samples: `data/processed/showcase/sam3_autolabel_v2/viz/val/`
+- Training metrics: `results/showcase/training/sam3_autolabel_v2/results.png`
+- Tracking output: `results/showcase/system/sam3_autolabel_v2/g34_demo.mp4`
+
 ## Showcase artifacts (tracked)
 
 - Labeling samples: `data/processed/showcase/sam3_autolabel_v2/` (viz + metadata)
