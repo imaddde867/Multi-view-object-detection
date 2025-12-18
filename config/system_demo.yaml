@@ -1,5 +1,3 @@
-# Demo run config for the new synced videos (1280x720 @ 29.97 fps).
-
 cameras:
   demo1: {source: data/raw/demo_videos/demo1.mov}
   demo2: {source: data/raw/demo_videos/demo2.mp4}
@@ -35,4 +33,4 @@ output:
 
 runtime:
   device: cuda:0
-  half: false
+  half: true
