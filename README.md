@@ -138,6 +138,22 @@ Edit `config/system.yaml`, then:
 multiview run --config config/system.yaml
 ```
 
+Debug global ID association by adding to your config:
+
+```yaml
+debug:
+  global_assoc: true
+  log_path: results/system/demo_run/global_assoc.jsonl # optional
+```
+
+The JSONL log includes per-frame local/global IDs, embeddings, cost matrices, and accept/reject decisions. Video overlays now show `G<global_id> L<local_id>` to verify failures quickly.
+
+Optional synthetic sanity check:
+
+```bash
+python scripts/debug_global_association.py
+```
+
 ## Showcase (tracked)
 
 - `data/processed/showcase/sam3_autolabel_v2/` (viz + metadata)

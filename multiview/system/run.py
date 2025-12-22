@@ -31,11 +31,13 @@ def _default_cfg() -> dict[str, Any]:
             "max_age": 30,
             "match_threshold": 0.5,
             "global_match_threshold": 0.75,
+            "global_max_age": 30,
             "embedder": {"type": "colorhist", "bins": 16},
         },
         "run": {"frame_stride": 1, "max_frames": None, "groups": []},
         "output": {"dir": "results/system", "write_video": False, "video_fps": 0.0},
         "runtime": {"device": "", "half": False},
+        "debug": {"global_assoc": False, "log_path": ""},
     }
 
 
@@ -110,12 +112,13 @@ def _draw_tracks(frame_bgr: np.ndarray, tracks: list[dict[str, Any]], class_name
     out = frame_bgr.copy()
     for tr in tracks:
         gid = int(tr["global_id"])
+        local = int(tr["local_id"])
         cls_id = int(tr["cls_id"])
         x0, y0, x1, y1 = [int(v) for v in tr["bbox_xyxy"]]
         rng = np.random.default_rng(color_seed + gid * 97)
         color = tuple(int(x) for x in rng.integers(20, 235, size=3))
         cv2.rectangle(out, (x0, y0), (x1, y1), color, 2)
-        label = f"ID:{gid} {class_names[cls_id]}"
+        label = f"G{gid} L{local} {class_names[cls_id]}"
         cv2.putText(out, label, (x0, max(0, y0 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
     return out
 
@@ -176,6 +179,9 @@ def run_multiview(cfg: dict[str, Any]) -> None:
     frame_stride = int(run_cfg.get("frame_stride", 1) or 1)
     max_frames = run_cfg.get("max_frames", None)
     max_frames_i = None if max_frames in (None, "", 0) else int(max_frames)
+    debug_cfg = base.get("debug", {}) or {}
+    debug_assoc = bool(debug_cfg.get("global_assoc", False))
+    debug_log_path = str(debug_cfg.get("log_path", "")).strip()
 
     def _camera_info(info: VideoInfo) -> dict[str, Any]:
         return {
@@ -195,6 +201,7 @@ def run_multiview(cfg: dict[str, Any]) -> None:
         caps: dict[str, cv2.VideoCapture] = {}
         infos: dict[str, VideoInfo] = {}
         writer: cv2.VideoWriter | None = None
+        debug_fp = None
         try:
             for cam in cam_names:
                 cam_entry = cameras_cfg.get(cam)
@@ -213,7 +220,11 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 )
                 for cam in cam_names
             }
-            gid = GlobalIDAssigner(match_threshold=float(tracker_cfg.get("global_match_threshold", 0.75)))
+            global_max_age = int(tracker_cfg.get("global_max_age", tracker_cfg.get("max_age", 30)))
+            gid = GlobalIDAssigner(
+                match_threshold=float(tracker_cfg.get("global_match_threshold", 0.75)),
+                max_age=global_max_age,
+            )
             anchor_cam = cam_names[0]
 
             out_json: dict[str, Any] = {
@@ -229,6 +240,10 @@ def run_multiview(cfg: dict[str, Any]) -> None:
             write_video = bool(out_cfg.get("write_video", False))
             video_out_path = output_root / f"{group_name}.avi"
             color_seed = 1337
+            if debug_assoc:
+                debug_path = Path(debug_log_path) if debug_log_path else output_root / f"{group_name}_global_assoc.jsonl"
+                debug_path.parent.mkdir(parents=True, exist_ok=True)
+                debug_fp = debug_path.open("w")
 
             processed = 0
             raw_idx = -1
@@ -261,8 +276,8 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 )
 
                 per_cam_tracks: dict[str, list[dict[str, Any]]] = {}
-                views_anchor: list[GlobalTrackView] = []
-                views_others: dict[str, list[GlobalTrackView]] = {}
+                views_by_cam: dict[str, list[GlobalTrackView]] = {}
+                views_by_key: dict[tuple[str, int], GlobalTrackView] = {}
 
                 for cam, frame, dets_raw in zip(cam_names, batch, dets_batch):
                     mapped_dets: list[Det] = []
@@ -278,10 +293,15 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                     views: list[GlobalTrackView] = []
                     for t in tracks:
                         local = int(t.track_id)
-                        global_id = gid.ensure(cam, local)
+                        view = GlobalTrackView(
+                            cam=cam,
+                            local_id=local,
+                            cls_id=int(t.cls_id),
+                            xyxy=t.xyxy,
+                            embedding=t.embedding,
+                        )
                         out_tracks.append(
                             {
-                                "global_id": global_id,
                                 "local_id": local,
                                 "cls_id": int(t.cls_id),
                                 "cls_name": targets[int(t.cls_id)],
@@ -289,30 +309,57 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                                 "score": float(t.score),
                             }
                         )
-                        views.append(
-                            GlobalTrackView(
-                                cam=cam,
-                                local_id=local,
-                                cls_id=int(t.cls_id),
-                                xyxy=t.xyxy,
-                                embedding=t.embedding,
-                            )
-                        )
+                        views.append(view)
+                        views_by_key[(cam, local)] = view
                     per_cam_tracks[cam] = out_tracks
+                    views_by_cam[cam] = views
 
-                    if cam == anchor_cam:
-                        views_anchor = views
-                    else:
-                        views_others[cam] = views
-
-                for other_cam, other_views in views_others.items():
-                    gid.associate_anchor(anchor_cam, views_anchor, other_cam, other_views)
+                frame_idx = processed - 1
+                assoc_debug = gid.assign_frame(frame_idx, views_by_cam, cam_order=cam_names, debug=debug_assoc)
 
                 for cam in cam_names:
                     for tr in per_cam_tracks[cam]:
-                        tr["global_id"] = gid.ensure(cam, int(tr["local_id"]))
+                        local = int(tr["local_id"])
+                        global_id = gid.get(cam, local)
+                        if global_id is None:
+                            view = views_by_key.get((cam, local))
+                            if view is not None:
+                                global_id = gid.ensure_view(view, frame_idx)
+                            else:
+                                global_id = gid.ensure(cam, local)
+                        tr["global_id"] = global_id
 
-                out_json["frames"].append({"frame": processed - 1, "cameras": per_cam_tracks})
+                out_json["frames"].append({"frame": frame_idx, "cameras": per_cam_tracks})
+
+                if debug_fp is not None:
+                    tracks_log: dict[str, list[dict[str, Any]]] = {}
+                    for cam in cam_names:
+                        cam_tracks: list[dict[str, Any]] = []
+                        for tr in per_cam_tracks[cam]:
+                            key = (cam, int(tr["local_id"]))
+                            view = views_by_key.get(key)
+                            embedding = []
+                            if view is not None:
+                                embedding = view.embedding.astype(np.float32, copy=False).reshape(-1).tolist()
+                            cam_tracks.append(
+                                {
+                                    "camera_id": cam,
+                                    "local_id": int(tr["local_id"]),
+                                    "global_id": int(tr["global_id"]),
+                                    "bbox_xyxy": [float(v) for v in tr["bbox_xyxy"]],
+                                    "score": float(tr["score"]),
+                                    "cls_id": int(tr["cls_id"]),
+                                    "cls_name": str(tr["cls_name"]),
+                                    "embedding": embedding,
+                                }
+                            )
+                        tracks_log[cam] = cam_tracks
+                    debug_payload = {
+                        "frame": frame_idx,
+                        "tracks": tracks_log,
+                        "association": assoc_debug,
+                    }
+                    debug_fp.write(json.dumps(debug_payload) + "\n")
 
                 if write_video:
                     rendered: list[np.ndarray] = []
@@ -339,3 +386,5 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 cap.release()
             if writer is not None:
                 writer.release()
+            if debug_fp is not None:
+                debug_fp.close()
