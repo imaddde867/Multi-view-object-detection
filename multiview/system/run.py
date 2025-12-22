@@ -233,6 +233,23 @@ def run_multiview(cfg: dict[str, Any]) -> None:
             "frame_count": int(info.frame_count),
         }
 
+    def _read_next(cap: cv2.VideoCapture) -> tuple[bool, np.ndarray | None, float]:
+        ret, frame = cap.read()
+        if not ret:
+            return False, None, 0.0
+        ts = float(cap.get(cv2.CAP_PROP_POS_MSEC) or 0.0)
+        return True, frame, ts
+
+    def _read_at_or_after(cap: cv2.VideoCapture, target_ts: float) -> tuple[bool, np.ndarray | None]:
+        ok, frame, ts = _read_next(cap)
+        if not ok:
+            return False, None
+        while ts < target_ts:
+            ok, frame, ts = _read_next(cap)
+            if not ok:
+                return False, None
+        return True, frame
+
     for group_name in selected_groups:
         cam_names = groups_cfg.get(group_name)
         if not cam_names:
@@ -271,7 +288,10 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 embedding_alpha=float(tracker_cfg.get("embedding_alpha", 1.0)),
                 world_alpha=float(tracker_cfg.get("world_alpha", 1.0)),
             )
-            anchor_cam = cam_names[0]
+
+            fps_candidates = [(c, infos[c].fps) for c in cam_names if infos[c].fps > 0.0]
+            sync_cam = min(fps_candidates, key=lambda x: x[1])[0] if fps_candidates else cam_names[0]
+            sync_fps = float(infos[sync_cam].fps or 0.0)
 
             out_json: dict[str, Any] = {
                 "metadata": {
@@ -294,20 +314,26 @@ def run_multiview(cfg: dict[str, Any]) -> None:
             processed = 0
             raw_idx = -1
             while True:
+                ok, sync_frame, sync_ts = _read_next(caps[sync_cam])
+                if not ok or sync_frame is None:
+                    break
                 raw_idx += 1
-                frames: dict[str, np.ndarray] = {}
+
+                if raw_idx % frame_stride != 0:
+                    continue
+
+                frames: dict[str, np.ndarray] = {sync_cam: sync_frame}
                 ok = True
                 for cam in cam_names:
-                    ret, frame = caps[cam].read()
-                    if not ret:
+                    if cam == sync_cam:
+                        continue
+                    ret, frame = _read_at_or_after(caps[cam], sync_ts)
+                    if not ret or frame is None:
                         ok = False
                         break
                     frames[cam] = frame
                 if not ok:
                     break
-
-                if raw_idx % frame_stride != 0:
-                    continue
 
                 processed += 1
                 if max_frames_i is not None and processed > max_frames_i:
@@ -419,6 +445,8 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                         fps_cfg = float(out_cfg.get("video_fps") or 0.0)
                         if fps_cfg > 0.0:
                             fps = fps_cfg
+                        elif sync_fps > 0.0:
+                            fps = sync_fps
                         else:
                             fps_candidates = [info.fps for info in infos.values() if info.fps > 0.0]
                             fps = max(fps_candidates) if fps_candidates else 30.0
