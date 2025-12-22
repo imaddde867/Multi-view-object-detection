@@ -1,0 +1,38 @@
+cameras:
+  demo1: {source: demo1.mov}
+  demo2: {source: demo2.mp4}
+
+groups:
+  demo: [demo1, demo2]
+
+detector:
+  model: yolo11m.pt
+  imgsz: 960
+  conf: 0.35
+  iou: 0.5
+  targets: person,car,bus
+  source_map: truck=car,motorcycle=car,bicycle=car
+
+tracker:
+  max_age: 30
+  global_max_age: 30
+  match_threshold: 0.5
+  global_match_threshold: 0.75
+  embedder: {type: colorhist, bins: 16}
+
+run:
+  frame_stride: 1
+  max_frames: 200
+  groups: [demo]
+
+output:
+  dir: results/system/demo_run
+  write_video: true
+  video_fps: 0.0
+
+runtime:
+  device: cuda:0
+  half: false
+
+debug:
+  global_assoc: true
