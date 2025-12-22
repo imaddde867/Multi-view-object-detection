@@ -24,6 +24,7 @@ def _default_cfg() -> dict[str, Any]:
             "imgsz": 960,
             "conf": 0.35,
             "iou": 0.5,
+            "max_det": 0,
             "targets": "person,car",
             "source_map": "truck=car,motorcycle=car,bicycle=car",
         },
@@ -80,13 +81,17 @@ class YoloDetector:
             self.names = {i: str(n) for i, n in enumerate(names_obj)}
 
     def predict_batch(
-        self, frames_bgr: list[np.ndarray], *, conf: float, iou: float, imgsz: int
+        self, frames_bgr: list[np.ndarray], *, conf: float, iou: float, imgsz: int, max_det: int
     ) -> list[list[tuple[tuple[float, float, float, float], float, int]]]:
+        max_det_i = int(max_det)
+        if max_det_i <= 0:
+            max_det_i = None
         results = self.model.predict(
             frames_bgr,
             conf=float(conf),
             iou=float(iou),
             imgsz=int(imgsz),
+            max_det=max_det_i,
             half=bool(self.half),
             verbose=False,
         )
@@ -377,6 +382,7 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                     conf=float(detector_cfg.get("conf", 0.35)),
                     iou=float(detector_cfg.get("iou", 0.5)),
                     imgsz=int(detector_cfg.get("imgsz", 960)),
+                    max_det=int(detector_cfg.get("max_det", 0)),
                 )
 
                 per_cam_tracks: dict[str, list[dict[str, Any]]] = {}
