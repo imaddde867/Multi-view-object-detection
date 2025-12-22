@@ -116,6 +116,7 @@ class GlobalIDAssigner:
 
         assigned_by_cam: dict[str, set[int]] = {cam: set() for cam in cam_order}
         unassigned_by_cam: dict[str, list[GlobalTrackView]] = {cam: [] for cam in cam_order}
+        assigned_views_by_cam: dict[str, list[GlobalTrackView]] = {cam: [] for cam in cam_order}
 
         for cam in cam_order:
             for view in views_by_cam.get(cam, []):
@@ -124,9 +125,82 @@ class GlobalIDAssigner:
                 if gid is None or gid not in self._global:
                     unassigned_by_cam[cam].append(view)
                     continue
+                state = self._global[gid]
+                cls_match = view.cls_id == state.cls_id
+                sim = cosine_sim(view.embedding, state.embedding)
+                if not cls_match or sim < self.match_threshold:
+                    self._map.pop(key, None)
+                    self._map_last_seen.pop(key, None)
+                    unassigned_by_cam[cam].append(view)
+                    continue
                 assigned_by_cam[cam].add(gid)
+                assigned_views_by_cam[cam].append(view)
                 self._map_last_seen[key] = frame_idx
                 self._update_state(gid, view, frame_idx)
+
+        for anchor_idx, anchor_cam in enumerate(cam_order):
+            anchor_views = assigned_views_by_cam[anchor_cam]
+            if not anchor_views:
+                continue
+            for other_cam in cam_order[anchor_idx + 1 :]:
+                other_views = assigned_views_by_cam[other_cam]
+                if not other_views:
+                    continue
+                cost = self._build_cost(anchor_views, other_views)
+                row_ind, col_ind = linear_sum_assignment(cost)
+                step = None
+                if debug_info is not None:
+                    step = {
+                        "type": "merge_assigned",
+                        "anchor_cam": anchor_cam,
+                        "other_cam": other_cam,
+                        "threshold": float(self.match_threshold),
+                        "rows": [self._view_debug(v) for v in anchor_views],
+                        "cols": [self._view_debug(v) for v in other_views],
+                        "cost_matrix": self._cost_to_list(cost),
+                        "assignments": [],
+                    }
+
+                for i, j in zip(row_ind.tolist(), col_ind.tolist()):
+                    a = anchor_views[i]
+                    b = other_views[j]
+                    sim = 1.0 - float(cost[i, j])
+                    gid_a = self._map.get((anchor_cam, a.local_id))
+                    gid_b = self._map.get((other_cam, b.local_id))
+                    reason = "ok"
+                    merged = False
+                    if sim < self.match_threshold:
+                        reason = "below_threshold"
+                    elif gid_a is None or gid_b is None:
+                        reason = "missing_gid"
+                    elif gid_a == gid_b:
+                        reason = "same_gid"
+                    else:
+                        keep = min(gid_a, gid_b)
+                        drop = max(gid_a, gid_b)
+                        conflict = any(keep in gids and drop in gids for gids in assigned_by_cam.values())
+                        if conflict:
+                            reason = "conflict"
+                        else:
+                            merged = True
+                            self.unify((anchor_cam, a.local_id), (other_cam, b.local_id))
+                            for gids in assigned_by_cam.values():
+                                if drop in gids:
+                                    gids.discard(drop)
+                                    gids.add(keep)
+                    if step is not None:
+                        step["assignments"].append(
+                            {
+                                "row": int(i),
+                                "col": int(j),
+                                "sim": float(sim),
+                                "merged": bool(merged),
+                                "reason": reason,
+                            }
+                        )
+
+                if step is not None:
+                    debug_info["steps"].append(step)
 
         for cam in cam_order:
             views = unassigned_by_cam[cam]
