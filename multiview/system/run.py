@@ -32,6 +32,11 @@ def _default_cfg() -> dict[str, Any]:
             "match_threshold": 0.5,
             "global_match_threshold": 0.75,
             "global_max_age": 30,
+            "spatial_weight": 0.0,
+            "spatial_sigma": 1.0,
+            "spatial_max_dist": 0.0,
+            "embedding_alpha": 1.0,
+            "world_alpha": 1.0,
             "embedder": {"type": "colorhist", "bins": 16},
         },
         "run": {"frame_stride": 1, "max_frames": None, "groups": []},
@@ -183,6 +188,42 @@ def run_multiview(cfg: dict[str, Any]) -> None:
     debug_assoc = bool(debug_cfg.get("global_assoc", False))
     debug_log_path = str(debug_cfg.get("log_path", "")).strip()
 
+    cam_homographies: dict[str, np.ndarray] = {}
+    for cam, cam_entry in cameras_cfg.items():
+        if not isinstance(cam_entry, dict):
+            continue
+        homography = cam_entry.get("homography")
+        if homography is None:
+            image_points = cam_entry.get("image_points")
+            world_points = cam_entry.get("world_points")
+            if image_points is None or world_points is None:
+                continue
+            img = np.asarray(image_points, dtype=np.float32)
+            world = np.asarray(world_points, dtype=np.float32)
+            if img.shape != world.shape or img.ndim != 2 or img.shape[0] < 4 or img.shape[1] != 2:
+                raise ValueError(
+                    f"Camera {cam} image_points/world_points must be Nx2 with N>=4 and matching shapes."
+                )
+            mat, _ = cv2.findHomography(img, world, method=0)
+            if mat is None:
+                raise ValueError(f"Camera {cam} homography could not be estimated from points.")
+        else:
+            mat = np.asarray(homography, dtype=np.float32)
+            if mat.shape != (3, 3):
+                raise ValueError(f"Camera {cam} homography must be a 3x3 matrix.")
+        cam_homographies[str(cam)] = mat.astype(np.float32)
+
+    def _world_xy(cam: str, xyxy: tuple[float, float, float, float]) -> tuple[float, float] | None:
+        mat = cam_homographies.get(cam)
+        if mat is None:
+            return None
+        x0, y0, x1, y1 = xyxy
+        cx = 0.5 * (x0 + x1)
+        cy = y1
+        pt = np.array([[[cx, cy]]], dtype=np.float32)
+        mapped = cv2.perspectiveTransform(pt, mat)[0, 0]
+        return (float(mapped[0]), float(mapped[1]))
+
     def _camera_info(info: VideoInfo) -> dict[str, Any]:
         return {
             "path": str(info.path),
@@ -224,6 +265,11 @@ def run_multiview(cfg: dict[str, Any]) -> None:
             gid = GlobalIDAssigner(
                 match_threshold=float(tracker_cfg.get("global_match_threshold", 0.75)),
                 max_age=global_max_age,
+                spatial_weight=float(tracker_cfg.get("spatial_weight", 0.0)),
+                spatial_sigma=float(tracker_cfg.get("spatial_sigma", 1.0)),
+                spatial_max_dist=float(tracker_cfg.get("spatial_max_dist", 0.0)),
+                embedding_alpha=float(tracker_cfg.get("embedding_alpha", 1.0)),
+                world_alpha=float(tracker_cfg.get("world_alpha", 1.0)),
             )
             anchor_cam = cam_names[0]
 
@@ -299,6 +345,7 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                             cls_id=int(t.cls_id),
                             xyxy=t.xyxy,
                             embedding=t.embedding,
+                            world_xy=_world_xy(cam, t.xyxy),
                         )
                         out_tracks.append(
                             {

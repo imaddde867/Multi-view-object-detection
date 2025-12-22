@@ -16,6 +16,7 @@ class GlobalTrackView:
     cls_id: int
     xyxy: tuple[float, float, float, float]
     embedding: np.ndarray
+    world_xy: tuple[float, float] | None = None
 
 
 @dataclass
@@ -25,12 +26,28 @@ class GlobalTrackState:
     embedding: np.ndarray
     last_seen: int
     bboxes: dict[str, tuple[float, float, float, float]] = field(default_factory=dict)
+    world_xy: tuple[float, float] | None = None
 
 
 class GlobalIDAssigner:
-    def __init__(self, *, match_threshold: float = 0.75, max_age: int = 30):
+    def __init__(
+        self,
+        *,
+        match_threshold: float = 0.75,
+        max_age: int = 30,
+        spatial_weight: float = 0.0,
+        spatial_sigma: float = 1.0,
+        spatial_max_dist: float = 0.0,
+        embedding_alpha: float = 1.0,
+        world_alpha: float = 1.0,
+    ):
         self.match_threshold = float(match_threshold)
         self.max_age = int(max_age)
+        self.spatial_weight = max(0.0, min(1.0, float(spatial_weight)))
+        self.spatial_sigma = max(1e-6, float(spatial_sigma))
+        self.spatial_max_dist = float(spatial_max_dist)
+        self.embedding_alpha = max(0.0, min(1.0, float(embedding_alpha)))
+        self.world_alpha = max(0.0, min(1.0, float(world_alpha)))
         self._next_gid = 1
         self._map: dict[tuple[str, int], int] = {}
         self._map_last_seen: dict[tuple[str, int], int] = {}
@@ -89,6 +106,10 @@ class GlobalIDAssigner:
                     state_keep.embedding = state_drop.embedding
                     state_keep.last_seen = state_drop.last_seen
                     state_keep.cls_id = state_drop.cls_id
+                    if state_drop.world_xy is not None:
+                        state_keep.world_xy = state_drop.world_xy
+                elif state_keep.world_xy is None and state_drop.world_xy is not None:
+                    state_keep.world_xy = state_drop.world_xy
                 state_keep.bboxes.update(state_drop.bboxes)
             self._global.pop(drop, None)
         return keep
@@ -382,6 +403,7 @@ class GlobalIDAssigner:
             embedding=view.embedding.copy(),
             last_seen=frame_idx,
             bboxes={view.cam: view.xyxy},
+            world_xy=view.world_xy,
         )
         return gid
 
@@ -394,12 +416,41 @@ class GlobalIDAssigner:
                 embedding=view.embedding.copy(),
                 last_seen=frame_idx,
                 bboxes={view.cam: view.xyxy},
+                world_xy=view.world_xy,
             )
             return
         state.cls_id = view.cls_id
-        state.embedding = view.embedding.copy()
+        state.embedding = self._blend_embedding(state.embedding, view.embedding)
         state.last_seen = frame_idx
         state.bboxes[view.cam] = view.xyxy
+        if view.world_xy is not None:
+            state.world_xy = self._blend_world(state.world_xy, view.world_xy)
+
+    def _blend_embedding(self, prev: np.ndarray, new: np.ndarray) -> np.ndarray:
+        alpha = self.embedding_alpha
+        if alpha >= 1.0:
+            blended = new.astype(np.float32, copy=True)
+        elif alpha <= 0.0:
+            blended = prev.astype(np.float32, copy=True)
+        else:
+            blended = prev.astype(np.float32, copy=False) * (1.0 - alpha) + new.astype(np.float32, copy=False) * alpha
+        norm = float(np.linalg.norm(blended) + 1e-9)
+        return blended / norm
+
+    def _blend_world(
+        self, prev: tuple[float, float] | None, new: tuple[float, float]
+    ) -> tuple[float, float]:
+        if prev is None:
+            return (float(new[0]), float(new[1]))
+        alpha = self.world_alpha
+        if alpha >= 1.0:
+            return (float(new[0]), float(new[1]))
+        if alpha <= 0.0:
+            return (float(prev[0]), float(prev[1]))
+        return (
+            float(prev[0]) * (1.0 - alpha) + float(new[0]) * alpha,
+            float(prev[1]) * (1.0 - alpha) + float(new[1]) * alpha,
+        )
 
     def _prune(self, frame_idx: int) -> None:
         if self.max_age <= 0:
@@ -431,25 +482,43 @@ class GlobalIDAssigner:
                 if gate_fn is not None and not gate_fn(ra, cb):
                     continue
                 sim = cosine_sim(ra.embedding, cb.embedding)
+                spatial_weight = self.spatial_weight
+                if spatial_weight > 0.0:
+                    ra_world = getattr(ra, "world_xy", None)
+                    cb_world = getattr(cb, "world_xy", None)
+                    if ra_world is not None and cb_world is not None:
+                        dx = float(ra_world[0]) - float(cb_world[0])
+                        dy = float(ra_world[1]) - float(cb_world[1])
+                        dist = float(np.hypot(dx, dy))
+                        if self.spatial_max_dist > 0.0 and dist > self.spatial_max_dist:
+                            continue
+                        spatial_sim = float(np.exp(-(dist * dist) / (2.0 * self.spatial_sigma * self.spatial_sigma)))
+                        sim = (1.0 - spatial_weight) * sim + spatial_weight * spatial_sim
                 cost[i, j] = 1.0 - sim
         return cost
 
     @staticmethod
     def _view_debug(view: GlobalTrackView) -> dict[str, Any]:
-        return {
+        payload = {
             "cam": view.cam,
             "local_id": int(view.local_id),
             "cls_id": int(view.cls_id),
             "bbox_xyxy": [float(v) for v in view.xyxy],
         }
+        if view.world_xy is not None:
+            payload["world_xy"] = [float(v) for v in view.world_xy]
+        return payload
 
     @staticmethod
     def _global_debug(state: GlobalTrackState) -> dict[str, Any]:
-        return {
+        payload = {
             "global_id": int(state.global_id),
             "cls_id": int(state.cls_id),
             "last_seen": int(state.last_seen),
         }
+        if state.world_xy is not None:
+            payload["world_xy"] = [float(v) for v in state.world_xy]
+        return payload
 
     @staticmethod
     def _cost_to_list(cost: np.ndarray) -> list[list[float]]:

@@ -11,13 +11,21 @@ def _norm(vec: np.ndarray) -> np.ndarray:
     return vec / norm
 
 
-def _view(cam: str, local_id: int, cls_id: int, emb: np.ndarray) -> GlobalTrackView:
+def _view(
+    cam: str,
+    local_id: int,
+    cls_id: int,
+    emb: np.ndarray,
+    *,
+    world_xy: tuple[float, float] | None = None,
+) -> GlobalTrackView:
     return GlobalTrackView(
         cam=cam,
         local_id=local_id,
         cls_id=cls_id,
         xyxy=(0.0, 0.0, 10.0, 10.0),
         embedding=_norm(emb),
+        world_xy=world_xy,
     )
 
 
@@ -72,6 +80,20 @@ def main() -> None:
     gid.assign_frame(3, views_frame3, cam_order=["cam1", "cam2"])
 
     assert gid.get("cam1", 4) == gid.get("cam2", 4), "Later matches should reconcile global IDs."
+
+    gid_spatial = GlobalIDAssigner(
+        match_threshold=0.9,
+        max_age=10,
+        spatial_weight=0.5,
+        spatial_sigma=1.0,
+        spatial_max_dist=2.0,
+    )
+    views_spatial = {
+        "cam1": [_view("cam1", 1, 0, emb_a, world_xy=(0.0, 0.0))],
+        "cam2": [_view("cam2", 1, 0, emb_a, world_xy=(10.0, 0.0))],
+    }
+    gid_spatial.assign_frame(0, views_spatial, cam_order=["cam1", "cam2"])
+    assert gid_spatial.get("cam1", 1) != gid_spatial.get("cam2", 1), "Spatial gating should block far matches."
 
     print("OK: global association sanity checks passed.")
 
