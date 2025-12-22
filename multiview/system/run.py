@@ -416,7 +416,12 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                     resized = [cv2.resize(img, (int(img.shape[1] * h / img.shape[0]), h)) for img in rendered]
                     combined = cv2.hconcat(resized)
                     if writer is None:
-                        fps = float(out_cfg.get("video_fps") or 0.0) or infos[anchor_cam].fps or 30.0
+                        fps_cfg = float(out_cfg.get("video_fps") or 0.0)
+                        if fps_cfg > 0.0:
+                            fps = fps_cfg
+                        else:
+                            fps_candidates = [info.fps for info in infos.values() if info.fps > 0.0]
+                            fps = max(fps_candidates) if fps_candidates else 30.0
                         writer = cv2.VideoWriter(
                             str(video_out_path),
                             cv2.VideoWriter_fourcc(*"XVID"),
