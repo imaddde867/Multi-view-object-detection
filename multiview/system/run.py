@@ -250,6 +250,26 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 return False, None
         return True, frame
 
+    def _estimate_fps(path: Path, *, sample_frames: int = 10) -> float:
+        cap = cv2.VideoCapture(str(path))
+        if not cap.isOpened():
+            cap.release()
+            return 0.0
+        timestamps: list[float] = []
+        for _ in range(sample_frames):
+            ret, _frame = cap.read()
+            if not ret:
+                break
+            timestamps.append(float(cap.get(cv2.CAP_PROP_POS_MSEC) or 0.0))
+        cap.release()
+        deltas = [b - a for a, b in zip(timestamps, timestamps[1:]) if b > a]
+        if not deltas:
+            return 0.0
+        median_delta = float(np.median(np.asarray(deltas, dtype=np.float32)))
+        if median_delta <= 0.0:
+            return 0.0
+        return 1000.0 / median_delta
+
     for group_name in selected_groups:
         cam_names = groups_cfg.get(group_name)
         if not cam_names:
@@ -270,6 +290,12 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 caps[cam] = cap
                 infos[cam] = info
 
+            effective_fps: dict[str, float] = {}
+            for cam in cam_names:
+                fps = _estimate_fps(infos[cam].path)
+                if fps > 0.0:
+                    effective_fps[cam] = fps
+
             trackers = {
                 cam: SimpleTracker(
                     embedder,
@@ -289,9 +315,15 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 world_alpha=float(tracker_cfg.get("world_alpha", 1.0)),
             )
 
-            fps_candidates = [(c, infos[c].fps) for c in cam_names if infos[c].fps > 0.0]
-            sync_cam = min(fps_candidates, key=lambda x: x[1])[0] if fps_candidates else cam_names[0]
-            sync_fps = float(infos[sync_cam].fps or 0.0)
+            fps_candidates = [
+                (c, effective_fps[c]) for c in cam_names if c in effective_fps and effective_fps[c] > 0.0
+            ]
+            if fps_candidates:
+                sync_cam, sync_fps = min(fps_candidates, key=lambda x: x[1])
+            else:
+                meta_candidates = [(c, infos[c].fps) for c in cam_names if infos[c].fps > 0.0]
+                sync_cam = min(meta_candidates, key=lambda x: x[1])[0] if meta_candidates else cam_names[0]
+                sync_fps = float(infos[sync_cam].fps or 0.0)
 
             out_json: dict[str, Any] = {
                 "metadata": {
