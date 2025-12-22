@@ -1,0 +1,45 @@
+# Tuned demo config (demo1.mov + demo2.mp4).
+
+cameras:
+  demo1: {source: demo1.mov}
+  demo2: {source: demo2.mp4}
+
+groups:
+  demo: [demo1, demo2]
+
+detector:
+  model: results/training/sam3_autolabel_v2/weights/best.pt
+  imgsz: 768
+  conf: 0.5
+  iou: 0.4
+  max_det: 100
+  targets: person,car,bus
+  source_map: truck=car,motorcycle=car,bicycle=car
+
+tracker:
+  max_age: 30
+  match_threshold: 0.6
+  global_match_threshold: 0.85
+  global_max_age: 30
+  spatial_weight: 0.0
+  spatial_sigma: 1.0
+  spatial_max_dist: 0.0
+  embedding_alpha: 0.6
+  world_alpha: 0.6
+  embedder:
+    type: torch_resnet18
+    # If torchvision is missing, switch to "colorhist".
+
+run:
+  frame_stride: 1
+  max_frames: null
+  groups: [demo]
+
+output:
+  dir: results/system/demo_tuned
+  write_video: true
+  video_fps: 0.0
+
+runtime:
+  device: cuda:0
+  half: false
