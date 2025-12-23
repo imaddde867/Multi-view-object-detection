@@ -5,6 +5,10 @@ End-to-end pipeline for multi-view object detection and tracking across synchron
 2) Train a YOLO detector.
 3) Run multi-view detection + tracking with camera groups.
 
+## Quick look
+
+![Multi-view tracking overlay](results/showcase/training/sam3_autolabel_v2/val_batch0_pred.jpg)
+
 ## Quickstart: run the demo clips
 
 Option A (tuned; uses repo-root `demo1.mov` + `demo2.mp4`; requires `torch/torchvision`):
