@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
+from multiview.utils.yaml import load_yaml
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
 
@@ -21,15 +21,6 @@ class VerifyReport:
     boxes_per_class: dict[str, int]
     warnings: list[str]
     errors: list[str]
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    data = yaml.safe_load(path.read_text())
-    if data is None:
-        return {}
-    if not isinstance(data, dict):
-        raise ValueError(f"Expected a YAML mapping at {path}, got {type(data).__name__}")
-    return data
 
 
 def _as_names(raw: Any) -> list[str]:
@@ -87,7 +78,7 @@ def verify_dataset(
     if not dataset_yaml.exists():
         raise FileNotFoundError(f"Dataset yaml not found: {dataset_yaml}")
 
-    cfg = _load_yaml(dataset_yaml)
+    cfg = load_yaml(dataset_yaml)
     root = _resolve_root(dataset_yaml, cfg)
 
     names = _as_names(cfg.get("names"))

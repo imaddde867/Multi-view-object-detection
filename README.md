@@ -5,57 +5,31 @@ End-to-end pipeline for multi-view object detection and tracking across synchron
 2) Train a YOLO detector.
 3) Run multi-view detection + tracking with camera groups.
 
-## Quickstart: run the best model on new videos
+## Quickstart: run the demo clips
 
-Put new videos under `data/raw/`, create a small run config, and run:
+Option A (tuned; uses repo-root `demo1.mov` + `demo2.mp4`; requires `torch/torchvision`):
+
+```bash
+multiview run --config config/system_demo_tuned.yaml
+```
+
+Option B (colorhist embedder; keep inputs under `data/raw/`):
 
 ```bash
 mkdir -p data/raw/demo_videos
 ln -s "$PWD/demo1.mov" data/raw/demo_videos/demo1.mov
 ln -s "$PWD/demo2.mp4" data/raw/demo_videos/demo2.mp4
 
-cp config/system.yaml config/system_demo.yaml
-```
-
-Edit `config/system_demo.yaml`:
-
-```yaml
-cameras:
-  demo1: {source: data/raw/demo_videos/demo1.mov}
-  demo2: {source: data/raw/demo_videos/demo2.mp4}
-
-groups:
-  demo: [demo1, demo2]
-
-detector:
-  model: results/training/sam3_autolabel_v2/weights/best.pt
-  imgsz: 960
-  conf: 0.35
-  iou: 0.5
-  targets: person,car,bus
-
-run:
-  frame_stride: 1
-  max_frames: null
-  groups: [demo]
-
-output:
-  dir: results/system/demo_run
-  write_video: true
-  video_fps: 0.0
-```
-
-Run:
-
-```bash
 multiview run --config config/system_demo.yaml
 ```
 
-Outputs:
-- `results/system/demo_run/demo.json`
-- `results/system/demo_run/demo.avi`
+Outputs (per run):
+- `results/system/demo_tuned/demo.json` + `results/system/demo_tuned/demo.avi`
+- `results/system/demo_run/demo.json` + `results/system/demo_run/demo.avi`
 
-If `.mov` fails to open, convert once (requires `ffmpeg`):
+If you do not have CUDA, set `runtime.device: cpu` and `runtime.half: false` in the config.
+
+If `.mov` fails to open, convert once (requires `ffmpeg`) and update your camera path:
 
 ```bash
 ffmpeg -i demo1.mov -c:v libx264 -pix_fmt yuv420p data/raw/demo_videos/demo1.mp4
@@ -66,22 +40,26 @@ ffmpeg -i demo1.mov -c:v libx264 -pix_fmt yuv420p data/raw/demo_videos/demo1.mp4
 ```bash
 pip install -r requirements.txt
 pip install -e .
-pip install -e sam3
 ```
 
 Optional:
-- `pip install -e ".[tracking]"` to enable the `torch_resnet18` embedder.
+- `pip install -e sam3` to enable SAM3 labeling.
+- `pip install -e ".[tracking]"` to enable the `torch_resnet18` embedder (used by `config/system_demo_tuned.yaml`).
 
 ## Project layout
 
-- `config/` run configs for labeling, training, and system runs.
+- `multiview/` core pipeline + CLI.
+- `config/` configs for labeling (`labeling.yaml`), training (`train.yaml`), and the two demo system runs (`system_demo*.yaml`; copy one as your template).
 - `data/raw/` raw videos and ground-truth assets (`testing_videos/`, `multiclass_ground_truth/`, `multiclass_ground_truth_images/`).
 - `data/processed/` full datasets (local); `data/processed/showcase/` small tracked samples.
 - `checkpoints/yolo/` local YOLO base weights.
-- `checkpoints/sam3/` SAM3 checkpoint (`sam3.pt`).
+- `checkpoints/sam3/` SAM3 checkpoints (place `sam3.pt` here).
 - `results/training/` training runs (includes `weights/best.pt`).
-- `results/system/` system outputs (videos + JSON).
+- `results/system/` system outputs (videos + JSON; either per-run folders or group files).
+- `results/showcase/` curated artifacts for demos.
 - `runs/` MLflow runs.
+- `sam3/` SAM3 source (editable install for labeling).
+- `scripts/` debugging utilities.
 - `slurm/` Puhti job scripts.
 
 ## Pipeline
@@ -132,18 +110,20 @@ multiview train --config config/train.yaml
 
 ### 3) Run multi-view detection + tracking
 
-Edit `config/system.yaml`, then:
+For demos, use:
 
 ```bash
-multiview run --config config/system.yaml
+multiview run --config config/system_demo_tuned.yaml
 ```
+
+For custom camera groups, copy one of the demo configs, update `cameras` + `groups`, and pass it via `--config`.
 
 Debug global ID association by adding to your config:
 
 ```yaml
 debug:
   global_assoc: true
-  log_path: results/system/demo_run/global_assoc.jsonl # optional
+  log_path: results/system/demo_run/demo_global_assoc.jsonl # optional
 ```
 
 The JSONL log includes per-frame local/global IDs, embeddings, cost matrices, and accept/reject decisions. Video overlays now show `G<global_id> L<local_id>` to verify failures quickly.
@@ -173,3 +153,5 @@ Use the job scripts in `slurm/`:
 ```bash
 bash slurm/submit_pipeline.sh
 ```
+
+Defaults target the demo configs (`system_demo_tuned.yaml` for the run step); override `MULTIVIEW_*_CONFIG` to point at your own YAMLs.

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from multiview.utils.boxes import Det
+from multiview.utils.yolo import load_yolo_model
 
 
 def parse_kv_map(mapping_str: str) -> dict[str, str]:
@@ -33,39 +33,7 @@ class Proposal:
 
 class YoloProposer:
     def __init__(self, weights: str, *, device: str = "", half: bool = False):
-        weights_path = Path(weights)
-        if weights_path.suffix:
-            if weights_path.is_absolute() or weights_path.parent != Path("."):
-                if not weights_path.exists():
-                    raise FileNotFoundError(f"YOLO weights not found: {weights_path}")
-            elif not weights_path.exists():
-                print(
-                    "⚠️ YOLO weights not found locally. Ultralytics will try to download them. "
-                    "If you're offline, download weights and pass a local path."
-                )
-        try:
-            from ultralytics import YOLO
-        except Exception as e:  # pragma: no cover
-            raise RuntimeError("Missing dependency: ultralytics. Install with `pip install -r requirements.txt`.") from e
-
-        self.model = YOLO(weights)
-        if device:
-            try:
-                self.model.to(device)
-            except Exception:
-                pass
-        if half:
-            try:
-                self.model.model.half()
-            except Exception:
-                pass
-
-        self.names: dict[int, str] = {}
-        names_obj: Any = getattr(self.model, "names", None)
-        if isinstance(names_obj, dict):
-            self.names = {int(k): str(v) for k, v in names_obj.items()}
-        elif isinstance(names_obj, (list, tuple)):
-            self.names = {i: str(n) for i, n in enumerate(names_obj)}
+        self.model, self.names = load_yolo_model(weights, device=device, half=half)
 
     def propose(
         self,

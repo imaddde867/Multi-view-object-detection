@@ -9,13 +9,14 @@ set -euo pipefail
 # Optional overrides:
 #   MULTIVIEW_LABEL_CONFIG=config/labeling.yaml \
 #   MULTIVIEW_TRAIN_CONFIG=config/train.yaml \
-#   MULTIVIEW_RUN_CONFIG=config/system.yaml \
+#   MULTIVIEW_RUN_CONFIG=config/system_demo_tuned.yaml \
 #   SAM3_CHECKPOINT=/path/to/sam3.pt \
 #   bash slurm/submit_pipeline.sh
 
 LABEL_CONFIG="${MULTIVIEW_LABEL_CONFIG:-config/labeling.yaml}"
 TRAIN_CONFIG="${MULTIVIEW_TRAIN_CONFIG:-config/train.yaml}"
-RUN_CONFIG="${MULTIVIEW_RUN_CONFIG:-config/system.yaml}"
+# Default run config is the tuned demo; override with MULTIVIEW_RUN_CONFIG for custom runs.
+RUN_CONFIG="${MULTIVIEW_RUN_CONFIG:-config/system_demo_tuned.yaml}"
 SAM3_CHECKPOINT="${SAM3_CHECKPOINT:-}"
 
 echo "Submitting Multiview pipeline:"

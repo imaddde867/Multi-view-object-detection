@@ -21,5 +21,6 @@ if [[ -f ".venv/bin/activate" ]]; then
   source .venv/bin/activate
 fi
 
-RUN_CONFIG="${MULTIVIEW_RUN_CONFIG:-config/system.yaml}"
+# Default to the tuned demo config; override MULTIVIEW_RUN_CONFIG for custom runs.
+RUN_CONFIG="${MULTIVIEW_RUN_CONFIG:-config/system_demo_tuned.yaml}"
 multiview run --config "$RUN_CONFIG"

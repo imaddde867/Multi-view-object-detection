@@ -365,32 +365,6 @@ class GlobalIDAssigner:
 
         return debug_info
 
-    def associate_anchor(
-        self,
-        anchor_cam: str,
-        anchor_tracks: list[GlobalTrackView],
-        other_cam: str,
-        other_tracks: list[GlobalTrackView],
-    ) -> None:
-        # Legacy anchor association (does not update the global registry state).
-        if not anchor_tracks or not other_tracks:
-            return
-
-        cost = np.ones((len(anchor_tracks), len(other_tracks)), dtype=np.float32) * 1e3
-        for i, ta in enumerate(anchor_tracks):
-            for j, tb in enumerate(other_tracks):
-                if ta.cls_id != tb.cls_id:
-                    continue
-                sim = cosine_sim(ta.embedding, tb.embedding)
-                cost[i, j] = 1.0 - sim
-
-        row_ind, col_ind = linear_sum_assignment(cost)
-        for i, j in zip(row_ind.tolist(), col_ind.tolist()):
-            sim = 1.0 - float(cost[i, j])
-            if sim < self.match_threshold:
-                continue
-            self.unify((anchor_cam, anchor_tracks[i].local_id), (other_cam, other_tracks[j].local_id))
-
     def _new_global(self, view: GlobalTrackView, frame_idx: int) -> int:
         gid = self._next_gid
         self._next_gid += 1

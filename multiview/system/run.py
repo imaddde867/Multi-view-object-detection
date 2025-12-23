@@ -13,6 +13,7 @@ from multiview.tracking.global_association import GlobalIDAssigner, GlobalTrackV
 from multiview.tracking.simple_tracker import SimpleTracker
 from multiview.utils.boxes import Det
 from multiview.utils.video import VideoInfo, open_video
+from multiview.utils.yolo import load_yolo_model
 
 
 def _default_cfg() -> dict[str, Any]:
@@ -49,36 +50,9 @@ def _default_cfg() -> dict[str, Any]:
 
 class YoloDetector:
     def __init__(self, weights: str, *, device: str = "", half: bool = False):
-        weights_path = Path(weights)
-        if weights_path.suffix:
-            if weights_path.is_absolute() or weights_path.parent != Path("."):
-                if not weights_path.exists():
-                    raise FileNotFoundError(f"YOLO weights not found: {weights_path}")
-            elif not weights_path.exists():
-                print(
-                    "⚠️ YOLO weights not found locally. Ultralytics will try to download them. "
-                    "If you're offline, download weights and pass a local path."
-                )
-        try:
-            from ultralytics import YOLO
-        except Exception as e:  # pragma: no cover
-            raise RuntimeError("Missing dependency: ultralytics. Install with `pip install -r requirements.txt`.") from e
-
         self.device = str(device or "").strip()
         self.half = bool(half)
-        self.model = YOLO(weights)
-        if self.device:
-            try:
-                self.model.to(self.device)
-            except Exception:
-                pass
-
-        self.names: dict[int, str] = {}
-        names_obj: Any = getattr(self.model, "names", None)
-        if isinstance(names_obj, dict):
-            self.names = {int(k): str(v) for k, v in names_obj.items()}
-        elif isinstance(names_obj, (list, tuple)):
-            self.names = {i: str(n) for i, n in enumerate(names_obj)}
+        self.model, self.names = load_yolo_model(weights, device=self.device, half=self.half)
 
     def predict_batch(
         self, frames_bgr: list[np.ndarray], *, conf: float, iou: float, imgsz: int, max_det: int
