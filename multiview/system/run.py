@@ -7,13 +7,12 @@ from typing import Any
 import cv2
 import numpy as np
 
-from multiview.labeling.proposals import parse_kv_map
+from multiview.config import merge
+from multiview.detector import YoloDetector, parse_kv_map
 from multiview.tracking.embeddings import ColorHistEmbedder, TorchResNet18Embedder
 from multiview.tracking.global_association import GlobalIDAssigner, GlobalTrackView
 from multiview.tracking.simple_tracker import SimpleTracker
-from multiview.utils.boxes import Det
 from multiview.utils.video import VideoInfo, open_video
-from multiview.utils.yolo import load_yolo_model
 
 
 def _default_cfg() -> dict[str, Any]:
@@ -46,44 +45,6 @@ def _default_cfg() -> dict[str, Any]:
         "runtime": {"device": "", "half": False},
         "debug": {"global_assoc": False, "log_path": ""},
     }
-
-
-class YoloDetector:
-    def __init__(self, weights: str, *, device: str = "", half: bool = False):
-        self.device = str(device or "").strip()
-        self.half = bool(half)
-        self.model, self.names = load_yolo_model(weights, device=self.device, half=self.half)
-
-    def predict_batch(
-        self, frames_bgr: list[np.ndarray], *, conf: float, iou: float, imgsz: int, max_det: int
-    ) -> list[list[tuple[tuple[float, float, float, float], float, int]]]:
-        max_det_i = int(max_det)
-        if max_det_i <= 0:
-            max_det_i = None
-        results = self.model.predict(
-            frames_bgr,
-            conf=float(conf),
-            iou=float(iou),
-            imgsz=int(imgsz),
-            max_det=max_det_i,
-            half=bool(self.half),
-            verbose=False,
-        )
-        out: list[list[tuple[tuple[float, float, float, float], float, int]]] = []
-        for r in results:
-            boxes = getattr(r, "boxes", None)
-            if boxes is None or len(boxes) == 0:
-                out.append([])
-                continue
-            xyxy = boxes.xyxy.cpu().numpy().astype(np.float32)
-            scores = boxes.conf.cpu().numpy().astype(np.float32)
-            cls_ids = boxes.cls.cpu().numpy().astype(np.int32)
-            dets = []
-            for b, s, c in zip(xyxy, scores, cls_ids):
-                x0, y0, x1, y1 = [float(v) for v in b.tolist()]
-                dets.append(((x0, y0, x1, y1), float(s), int(c)))
-            out.append(dets)
-        return out
 
 
 def _parse_targets(targets: Any) -> list[str]:
@@ -346,27 +307,21 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                     break
 
                 batch = [frames[c] for c in cam_names]
-                dets_batch = detector.predict_batch(
+                dets_batch = detector.predict_dets(
                     batch,
                     conf=float(detector_cfg.get("conf", 0.35)),
                     iou=float(detector_cfg.get("iou", 0.5)),
                     imgsz=int(detector_cfg.get("imgsz", 960)),
                     max_det=int(detector_cfg.get("max_det", 0)),
+                    source_map=source_map,
+                    target_to_id=target_to_id,
                 )
 
                 per_cam_tracks: dict[str, list[dict[str, Any]]] = {}
                 views_by_cam: dict[str, list[GlobalTrackView]] = {}
                 views_by_key: dict[tuple[str, int], GlobalTrackView] = {}
 
-                for cam, frame, dets_raw in zip(cam_names, batch, dets_batch):
-                    mapped_dets: list[Det] = []
-                    for xyxy, score, cls_id in dets_raw:
-                        src_name = detector.names.get(int(cls_id), str(int(cls_id)))
-                        tgt_name = source_map.get(src_name, src_name)
-                        if tgt_name not in target_to_id:
-                            continue
-                        mapped_dets.append(Det(xyxy=xyxy, cls_id=target_to_id[tgt_name], score=float(score)))
-
+                for cam, frame, mapped_dets in zip(cam_names, batch, dets_batch):
                     tracks = trackers[cam].update(frame, mapped_dets)
                     out_tracks: list[dict[str, Any]] = []
                     views: list[GlobalTrackView] = []

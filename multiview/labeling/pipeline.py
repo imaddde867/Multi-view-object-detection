@@ -10,7 +10,7 @@ import numpy as np
 from tqdm import tqdm
 
 from multiview.config import merge
-from multiview.labeling.proposals import YoloProposer, parse_kv_map
+from multiview.detector import YoloDetector, parse_kv_map
 from multiview.labeling.sam3_refiner import Sam3BoxRefiner, Sam3Config
 from multiview.utils.boxes import Det, area_xyxy, nms_xyxy, to_yolo_line
 from multiview.utils.hash_split import stable_split
@@ -266,7 +266,7 @@ def label_videos(cfg: dict[str, Any]) -> None:
     target_to_id = {name: i for i, name in enumerate(c.targets)}
     source_map = parse_kv_map(c.source_map)
 
-    proposer = YoloProposer(c.proposal_model, device=c.runtime_device, half=c.runtime_half)
+    detector = YoloDetector(c.proposal_model, device=c.runtime_device, half=c.runtime_half)
     sam3 = Sam3BoxRefiner(
         Sam3Config(
             checkpoint=c.sam3_checkpoint,
@@ -359,19 +359,19 @@ def label_videos(cfg: dict[str, Any]) -> None:
                 for cam, frame in frames.items():
                     h, w = frame.shape[:2]
 
-                    proposals = proposer.propose(
-                        frame,
+                    prop_dets = detector.predict_dets(
+                        [frame],
                         conf=c.conf,
                         iou=c.iou,
-                        target_to_id=target_to_id,
                         source_map=source_map,
-                        min_box_area=c.min_box_area,
+                        target_to_id=target_to_id,
                         imgsz=c.proposal_imgsz if c.proposal_imgsz > 0 else None,
-                    )
+                    )[0]
+                    prop_dets = [d for d in prop_dets if area_xyxy(d.xyxy) >= float(c.min_box_area)]
 
                     dets: list[Det] = []
-                    proposal_boxes = [p.det.xyxy for p in proposals]
-                    prompts = [p.tgt_name for p in proposals]
+                    proposal_boxes = [d.xyxy for d in prop_dets]
+                    prompts = [c.targets[d.cls_id] for d in prop_dets]
                     refined = proposal_boxes
                     if proposal_boxes:
                         try:
@@ -382,10 +382,10 @@ def label_videos(cfg: dict[str, Any]) -> None:
                                 warned_sam3_fallback = True
                             refined = proposal_boxes
 
-                    for p, xyxy in zip(proposals, refined):
+                    for d, xyxy in zip(prop_dets, refined):
                         if area_xyxy(xyxy) < float(c.min_box_area):
                             continue
-                        dets.append(Det(xyxy=xyxy, cls_id=p.det.cls_id, score=p.det.score))
+                        dets.append(Det(xyxy=xyxy, cls_id=d.cls_id, score=d.score))
 
                     if c.sam3_nms_iou > 0 and dets:
                         by_cls: dict[int, list[Det]] = {}
@@ -404,7 +404,7 @@ def label_videos(cfg: dict[str, Any]) -> None:
                     if lines:
                         any_labels = True
 
-                    per_cam[cam] = {"frame": frame, "proposals": proposals, "dets": dets, "lines": lines}
+                    per_cam[cam] = {"frame": frame, "proposal_dets": prop_dets, "dets": dets, "lines": lines}
 
                 if not any_labels and not c.keep_empty:
                     continue
@@ -422,7 +422,7 @@ def label_videos(cfg: dict[str, Any]) -> None:
                     total_labels += len(lines)
 
                     if c.save_viz:
-                        proposal_dets = [p.det for p in item["proposals"]]
+                        proposal_dets = item["proposal_dets"]
                         viz = _draw_viz_overlay(frame, proposal_dets=proposal_dets, refined_dets=item["dets"], names=c.targets)
                         viz_out = out_root / "viz" / subset / f"{name}.jpg"
                         cv2.imwrite(str(viz_out), viz)
