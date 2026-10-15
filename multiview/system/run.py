@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,6 @@ import numpy as np
 
 from multiview.config import merge
 from multiview.detector import YoloDetector, parse_kv_map
-from multiview.tracking.embeddings import ColorHistEmbedder, TorchResNet18Embedder
 from multiview.tracking.global_association import GlobalIDAssigner, GlobalTrackView
 from multiview.tracking.simple_tracker import SimpleTracker
 from multiview.utils.video import VideoInfo, open_video
@@ -47,12 +47,6 @@ def _default_cfg() -> dict[str, Any]:
     }
 
 
-def _parse_targets(targets: Any) -> list[str]:
-    if isinstance(targets, list):
-        return [str(t) for t in targets]
-    return [t.strip() for t in str(targets).split(",") if t.strip()]
-
-
 def _draw_tracks(frame_bgr: np.ndarray, tracks: list[dict[str, Any]], class_names: list[str], color_seed: int) -> np.ndarray:
     out = frame_bgr.copy()
     for tr in tracks:
@@ -68,85 +62,202 @@ def _draw_tracks(frame_bgr: np.ndarray, tracks: list[dict[str, Any]], class_name
     return out
 
 
-def run_multiview(cfg: dict[str, Any]) -> None:
-    base = merge(_default_cfg(), cfg)
+def _as_bool(value: Any) -> bool:
+    """Coerce YAML/CLI truthy values; bool("false") is a trap we refuse."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in {"true", "yes", "1", "on"}:
+            return True
+        if low in {"false", "no", "0", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    raise ValueError(f"Cannot interpret {value!r} as a boolean.")
 
-    cameras_cfg = base.get("cameras", {})
-    groups_cfg = base.get("groups", {})
-    if not cameras_cfg or not groups_cfg:
-        raise ValueError("Config must define `cameras` and `groups`.")
 
-    detector_cfg = base["detector"]
-    tracker_cfg = base["tracker"]
-    run_cfg = base["run"]
-    out_cfg = base["output"]
-    runtime_cfg = base["runtime"]
+def _as_targets(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(t).strip() for t in value if str(t).strip()]
+    return [t.strip() for t in str(value).split(",") if t.strip()]
 
-    targets = _parse_targets(detector_cfg.get("targets", "person,car"))
-    target_to_id = {n: i for i, n in enumerate(targets)}
-    source_map = parse_kv_map(detector_cfg.get("source_map", ""))
 
-    model_path = str(detector_cfg.get("model", "")).strip()
-    if not model_path:
-        raise ValueError("Missing detector.model in config (weights path).")
+def _as_optional_int(value: Any) -> int | None:
+    if value in (None, "", 0):
+        return None
+    return int(value)
 
-    detector = YoloDetector(
-        model_path,
-        device=str(runtime_cfg.get("device", "")),
-        half=bool(runtime_cfg.get("half", False)),
-    )
 
-    embedder_cfg = tracker_cfg.get("embedder", {}) or {}
-    if isinstance(embedder_cfg, str):
-        embedder_cfg = {"type": embedder_cfg}
-    embedder_type = str(embedder_cfg.get("type", "colorhist"))
-    if embedder_type == "torch_resnet18":
-        embedder_device = str(embedder_cfg.get("device", runtime_cfg.get("device", "cpu")) or "cpu")
+def _camera_homography(entry: dict[str, Any], cam: str) -> np.ndarray | None:
+    homography = entry.get("homography")
+    if homography is None:
+        image_points = entry.get("image_points")
+        world_points = entry.get("world_points")
+        if image_points is None or world_points is None:
+            return None
+        img = np.asarray(image_points, dtype=np.float32)
+        world = np.asarray(world_points, dtype=np.float32)
+        if img.shape != world.shape or img.ndim != 2 or img.shape[0] < 4 or img.shape[1] != 2:
+            raise ValueError(
+                f"Camera {cam} image_points/world_points must be Nx2 with N>=4 and matching shapes."
+            )
+        mat, _ = cv2.findHomography(img, world, method=0)
+        if mat is None:
+            raise ValueError(f"Camera {cam} homography could not be estimated from points.")
+        return mat.astype(np.float32)
+    mat = np.asarray(homography, dtype=np.float32)
+    if mat.shape != (3, 3):
+        raise ValueError(f"Camera {cam} homography must be a 3x3 matrix.")
+    return mat.astype(np.float32)
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    """Typed view of a merged run config, built once at the run seam.
+
+    The run pipeline used to cast every value from the raw dict at its use
+    site; this dataclass performs each cast and validation once, with clear
+    errors, and gives the run loop typed fields to read.
+    """
+
+    cameras: dict[str, Any]
+    groups: dict[str, Any]
+    cam_homographies: dict[str, np.ndarray]
+    model: str
+    imgsz: int
+    conf: float
+    iou: float
+    max_det: int
+    targets: list[str]
+    source_map: dict[str, str]
+    max_age: int
+    match_threshold: float
+    global_match_threshold: float
+    global_max_age: int
+    spatial_weight: float
+    spatial_sigma: float
+    spatial_max_dist: float
+    embedding_alpha: float
+    world_alpha: float
+    embedder_type: str
+    embedder_bins: int
+    embedder_device: str
+    frame_stride: int
+    max_frames: int | None
+    run_groups: list[str]
+    out_dir: Path
+    write_video: bool
+    video_fps: float
+    device: str
+    half: bool
+    debug_assoc: bool
+    debug_log_path: str
+
+    @classmethod
+    def from_config(cls, cfg: dict[str, Any]) -> RunConfig:
+        cameras = cfg.get("cameras") or {}
+        groups = cfg.get("groups") or {}
+        if not cameras:
+            raise ValueError("Config must define `cameras` and `groups`.")
+        if not groups:
+            raise ValueError("Config must define `cameras` and `groups`.")
+        detector = cfg.get("detector", {})
+        tracker = cfg.get("tracker", {})
+        run_cfg = cfg.get("run", {})
+        out_cfg = cfg.get("output", {})
+        runtime = cfg.get("runtime", {})
+        debug = cfg.get("debug", {})
+
+        model = str(detector.get("model", "")).strip()
+        if not model:
+            raise ValueError("Missing detector.model in config (weights path).")
+
+        embedder_cfg = tracker.get("embedder", {}) or {}
+        if isinstance(embedder_cfg, str):
+            embedder_cfg = {"type": embedder_cfg}
+        embedder_type = str(embedder_cfg.get("type", "colorhist"))
+        embedder_device = str(embedder_cfg.get("device", runtime.get("device", "cpu")) or "cpu")
         if embedder_device.isdigit():
             embedder_device = f"cuda:{embedder_device}"
-        embedder = TorchResNet18Embedder(device=embedder_device)
+
+        cam_homographies: dict[str, np.ndarray] = {}
+        for cam, cam_entry in cameras.items():
+            if not isinstance(cam_entry, dict):
+                continue
+            mat = _camera_homography(cam_entry, str(cam))
+            if mat is not None:
+                cam_homographies[str(cam)] = mat
+
+        raw_map = detector.get("source_map", "")
+        source_map = parse_kv_map(raw_map) if isinstance(raw_map, str) else dict(raw_map or {})
+
+        return cls(
+            cameras=cameras,
+            groups=groups,
+            cam_homographies=cam_homographies,
+            model=model,
+            imgsz=int(detector.get("imgsz", 960)),
+            conf=float(detector.get("conf", 0.35)),
+            iou=float(detector.get("iou", 0.5)),
+            max_det=int(detector.get("max_det", 0)),
+            targets=_as_targets(detector.get("targets", "person,car")),
+            source_map=source_map,
+            max_age=int(tracker.get("max_age", 30)),
+            match_threshold=float(tracker.get("match_threshold", 0.5)),
+            global_match_threshold=float(tracker.get("global_match_threshold", 0.75)),
+            global_max_age=int(tracker.get("global_max_age", tracker.get("max_age", 30))),
+            spatial_weight=float(tracker.get("spatial_weight", 0.0)),
+            spatial_sigma=float(tracker.get("spatial_sigma", 1.0)),
+            spatial_max_dist=float(tracker.get("spatial_max_dist", 0.0)),
+            embedding_alpha=float(tracker.get("embedding_alpha", 1.0)),
+            world_alpha=float(tracker.get("world_alpha", 1.0)),
+            embedder_type=embedder_type,
+            embedder_bins=int(embedder_cfg.get("bins", 16)),
+            embedder_device=embedder_device,
+            frame_stride=int(run_cfg.get("frame_stride", 1) or 1),
+            max_frames=_as_optional_int(run_cfg.get("max_frames")),
+            run_groups=[str(g) for g in run_cfg.get("groups", [])],
+            out_dir=Path(str(out_cfg.get("dir", "results/system"))),
+            write_video=_as_bool(out_cfg.get("write_video", False)),
+            video_fps=float(out_cfg.get("video_fps") or 0.0),
+            device=str(runtime.get("device", "")).strip(),
+            half=_as_bool(runtime.get("half", False)),
+            debug_assoc=_as_bool(debug.get("global_assoc", False)),
+            debug_log_path=str(debug.get("log_path", "")).strip(),
+        )
+
+
+def run_multiview(cfg: dict[str, Any]) -> None:
+    c = RunConfig.from_config(merge(_default_cfg(), cfg))
+
+    detector = YoloDetector(c.model, device=c.device, half=c.half)
+    target_to_id = {name: i for i, name in enumerate(c.targets)}
+
+    if c.embedder_type == "torch_resnet18":
+        from multiview.tracking.embeddings import TorchResNet18Embedder
+
+        embedder = TorchResNet18Embedder(device=c.embedder_device)
     else:
-        bins = int(embedder_cfg.get("bins", 16))
-        embedder = ColorHistEmbedder(bins=bins)
+        from multiview.tracking.embeddings import ColorHistEmbedder
 
-    selected_groups: list[str] = [str(g) for g in run_cfg.get("groups", []) if str(g).strip()]
+        embedder = ColorHistEmbedder(bins=c.embedder_bins)
+
+    selected_groups = [g for g in c.run_groups if g.strip()]
     if not selected_groups:
-        selected_groups = [str(g) for g in groups_cfg.keys()]
+        selected_groups = [str(g) for g in c.groups.keys()]
 
-    output_root = Path(str(out_cfg.get("dir", "results/system")))
+    output_root = c.out_dir
     output_root.mkdir(parents=True, exist_ok=True)
 
-    frame_stride = int(run_cfg.get("frame_stride", 1) or 1)
-    max_frames = run_cfg.get("max_frames", None)
-    max_frames_i = None if max_frames in (None, "", 0) else int(max_frames)
-    debug_cfg = base.get("debug", {}) or {}
-    debug_assoc = bool(debug_cfg.get("global_assoc", False))
-    debug_log_path = str(debug_cfg.get("log_path", "")).strip()
+    frame_stride = c.frame_stride
+    max_frames_i = c.max_frames
+    debug_assoc = c.debug_assoc
+    debug_log_path = c.debug_log_path
+    cameras_cfg = c.cameras
+    groups_cfg = c.groups
 
-    cam_homographies: dict[str, np.ndarray] = {}
-    for cam, cam_entry in cameras_cfg.items():
-        if not isinstance(cam_entry, dict):
-            continue
-        homography = cam_entry.get("homography")
-        if homography is None:
-            image_points = cam_entry.get("image_points")
-            world_points = cam_entry.get("world_points")
-            if image_points is None or world_points is None:
-                continue
-            img = np.asarray(image_points, dtype=np.float32)
-            world = np.asarray(world_points, dtype=np.float32)
-            if img.shape != world.shape or img.ndim != 2 or img.shape[0] < 4 or img.shape[1] != 2:
-                raise ValueError(
-                    f"Camera {cam} image_points/world_points must be Nx2 with N>=4 and matching shapes."
-                )
-            mat, _ = cv2.findHomography(img, world, method=0)
-            if mat is None:
-                raise ValueError(f"Camera {cam} homography could not be estimated from points.")
-        else:
-            mat = np.asarray(homography, dtype=np.float32)
-            if mat.shape != (3, 3):
-                raise ValueError(f"Camera {cam} homography must be a 3x3 matrix.")
-        cam_homographies[str(cam)] = mat.astype(np.float32)
+    cam_homographies = c.cam_homographies
 
     def _world_xy(cam: str, xyxy: tuple[float, float, float, float]) -> tuple[float, float] | None:
         mat = cam_homographies.get(cam)
@@ -232,22 +343,17 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                     effective_fps[cam] = fps
 
             trackers = {
-                cam: SimpleTracker(
-                    embedder,
-                    max_age=int(tracker_cfg.get("max_age", 30)),
-                    match_threshold=float(tracker_cfg.get("match_threshold", 0.5)),
-                )
+                cam: SimpleTracker(embedder, max_age=c.max_age, match_threshold=c.match_threshold)
                 for cam in cam_names
             }
-            global_max_age = int(tracker_cfg.get("global_max_age", tracker_cfg.get("max_age", 30)))
             gid = GlobalIDAssigner(
-                match_threshold=float(tracker_cfg.get("global_match_threshold", 0.75)),
-                max_age=global_max_age,
-                spatial_weight=float(tracker_cfg.get("spatial_weight", 0.0)),
-                spatial_sigma=float(tracker_cfg.get("spatial_sigma", 1.0)),
-                spatial_max_dist=float(tracker_cfg.get("spatial_max_dist", 0.0)),
-                embedding_alpha=float(tracker_cfg.get("embedding_alpha", 1.0)),
-                world_alpha=float(tracker_cfg.get("world_alpha", 1.0)),
+                match_threshold=c.global_match_threshold,
+                max_age=c.global_max_age,
+                spatial_weight=c.spatial_weight,
+                spatial_sigma=c.spatial_sigma,
+                spatial_max_dist=c.spatial_max_dist,
+                embedding_alpha=c.embedding_alpha,
+                world_alpha=c.world_alpha,
             )
 
             fps_candidates = [
@@ -264,13 +370,13 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 "metadata": {
                     "group": group_name,
                     "cameras": {c: _camera_info(infos[c]) for c in cam_names},
-                    "classes": targets,
-                    "model": model_path,
+                    "classes": c.targets,
+                    "model": c.model,
                 },
                 "frames": [],
             }
 
-            write_video = bool(out_cfg.get("write_video", False))
+            write_video = c.write_video
             video_out_path = output_root / f"{group_name}.avi"
             color_seed = 1337
             if debug_assoc:
@@ -309,11 +415,11 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 batch = [frames[c] for c in cam_names]
                 dets_batch = detector.predict_dets(
                     batch,
-                    conf=float(detector_cfg.get("conf", 0.35)),
-                    iou=float(detector_cfg.get("iou", 0.5)),
-                    imgsz=int(detector_cfg.get("imgsz", 960)),
-                    max_det=int(detector_cfg.get("max_det", 0)),
-                    source_map=source_map,
+                    conf=c.conf,
+                    iou=c.iou,
+                    imgsz=c.imgsz,
+                    max_det=c.max_det,
+                    source_map=c.source_map,
                     target_to_id=target_to_id,
                 )
 
@@ -339,7 +445,7 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                             {
                                 "local_id": local,
                                 "cls_id": int(t.cls_id),
-                                "cls_name": targets[int(t.cls_id)],
+                                "cls_name": c.targets[int(t.cls_id)],
                                 "bbox_xyxy": [float(v) for v in t.xyxy],
                                 "score": float(t.score),
                             }
@@ -399,12 +505,12 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 if write_video:
                     rendered: list[np.ndarray] = []
                     for cam in cam_names:
-                        rendered.append(_draw_tracks(frames[cam], per_cam_tracks[cam], targets, color_seed))
+                        rendered.append(_draw_tracks(frames[cam], per_cam_tracks[cam], c.targets, color_seed))
                     h = min(img.shape[0] for img in rendered)
                     resized = [cv2.resize(img, (int(img.shape[1] * h / img.shape[0]), h)) for img in rendered]
                     combined = cv2.hconcat(resized)
                     if writer is None:
-                        fps_cfg = float(out_cfg.get("video_fps") or 0.0)
+                        fps_cfg = c.video_fps
                         if fps_cfg > 0.0:
                             fps = fps_cfg
                         elif sync_fps > 0.0:
