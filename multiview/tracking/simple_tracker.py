@@ -31,7 +31,6 @@ class Track:
     score: float
     embedding: np.ndarray
     age: int = 0
-    hits: int = 1
 
 
 class SimpleTracker:
@@ -95,7 +94,6 @@ class SimpleTracker:
             trk.score = det.score
             trk.embedding = det_embeddings[j]
             trk.age = 0
-            trk.hits += 1
             assigned_dets.add(j)
 
         for j, det in enumerate(dets):

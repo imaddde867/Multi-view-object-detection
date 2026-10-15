@@ -28,15 +28,27 @@ def iter_group_frames(
     align: str = "timestamp",
     sync_cam: str | None = None,
 ) -> Iterator[tuple[int, dict[str, Any]]]:
+    # validate eagerly: a generator body would not run until first next()
+    if align not in ("naive", "timestamp"):
+        raise ValueError(f"Unknown align policy: {align!r} (expected 'naive' or 'timestamp')")
+    return _iter_group_frames(caps, stride=stride, max_frames=max_frames, align=align, sync_cam=sync_cam)
+
+
+def _iter_group_frames(
+    caps: dict[str, Any],
+    *,
+    stride: int,
+    max_frames: int | None,
+    align: str,
+    sync_cam: str | None,
+) -> Iterator[tuple[int, dict[str, Any]]]:
     if not caps:
         return
     cam_names = list(caps.keys())
     if align == "naive":
         yield from _iter_naive(caps, cam_names, stride=stride, max_frames=max_frames)
-    elif align == "timestamp":
-        yield from _iter_timestamp(caps, cam_names, stride=stride, max_frames=max_frames, sync_cam=sync_cam)
     else:
-        raise ValueError(f"Unknown align policy: {align!r} (expected 'naive' or 'timestamp')")
+        yield from _iter_timestamp(caps, cam_names, stride=stride, max_frames=max_frames, sync_cam=sync_cam)
 
 
 def _cap_exhausted(max_frames: int | None, kept: int) -> bool:

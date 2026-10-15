@@ -11,6 +11,7 @@ import numpy as np
 from multiview.config import merge
 from multiview.detector import YoloDetector, parse_kv_map
 from multiview.frames import iter_group_frames
+from multiview.system.assoc_log import JsonlAssocLogger
 from multiview.tracking.global_association import GlobalIDAssigner, GlobalTrackView
 from multiview.tracking.simple_tracker import SimpleTracker
 from multiview.utils.video import VideoInfo, open_video
@@ -251,8 +252,6 @@ def run_multiview(cfg: dict[str, Any]) -> None:
     output_root = c.out_dir
     output_root.mkdir(parents=True, exist_ok=True)
 
-    debug_assoc = c.debug_assoc
-    debug_log_path = c.debug_log_path
     cameras_cfg = c.cameras
     groups_cfg = c.groups
 
@@ -307,7 +306,7 @@ def run_multiview(cfg: dict[str, Any]) -> None:
         caps: dict[str, cv2.VideoCapture] = {}
         infos: dict[str, VideoInfo] = {}
         writer: cv2.VideoWriter | None = None
-        debug_fp = None
+        logger: JsonlAssocLogger | None = None
         try:
             for cam in cam_names:
                 cam_entry = cameras_cfg.get(cam)
@@ -361,10 +360,10 @@ def run_multiview(cfg: dict[str, Any]) -> None:
             write_video = c.write_video
             video_out_path = output_root / f"{group_name}.avi"
             color_seed = 1337
-            if debug_assoc:
-                debug_path = Path(debug_log_path) if debug_log_path else output_root / f"{group_name}_global_assoc.jsonl"
+            if c.debug_assoc:
+                debug_path = Path(c.debug_log_path) if c.debug_log_path else output_root / f"{group_name}_global_assoc.jsonl"
                 debug_path.parent.mkdir(parents=True, exist_ok=True)
-                debug_fp = debug_path.open("w")
+                logger = JsonlAssocLogger(debug_path.open("w"))
 
             for raw_idx, frames in iter_group_frames(
                 caps,
@@ -386,7 +385,6 @@ def run_multiview(cfg: dict[str, Any]) -> None:
 
                 per_cam_tracks: dict[str, list[dict[str, Any]]] = {}
                 views_by_cam: dict[str, list[GlobalTrackView]] = {}
-                views_by_key: dict[tuple[str, int], GlobalTrackView] = {}
 
                 for cam, frame, mapped_dets in zip(cam_names, batch, dets_batch):
                     tracks = trackers[cam].update(frame, mapped_dets)
@@ -412,56 +410,20 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                             }
                         )
                         views.append(view)
-                        views_by_key[(cam, local)] = view
                     per_cam_tracks[cam] = out_tracks
                     views_by_cam[cam] = views
 
                 frame_idx = raw_idx
-                assoc_debug = gid.assign_frame(frame_idx, views_by_cam, cam_order=cam_names, debug=debug_assoc)
+                global_ids = gid.assign_frame(frame_idx, views_by_cam, cam_order=cam_names, recorder=logger)
 
                 for cam in cam_names:
                     for tr in per_cam_tracks[cam]:
-                        local = int(tr["local_id"])
-                        global_id = gid.get(cam, local)
-                        if global_id is None:
-                            view = views_by_key.get((cam, local))
-                            if view is not None:
-                                global_id = gid.ensure_view(view, frame_idx)
-                            else:
-                                global_id = gid.ensure(cam, local)
-                        tr["global_id"] = global_id
+                        tr["global_id"] = global_ids[(cam, int(tr["local_id"]))]
 
                 out_json["frames"].append({"frame": frame_idx, "cameras": per_cam_tracks})
 
-                if debug_fp is not None:
-                    tracks_log: dict[str, list[dict[str, Any]]] = {}
-                    for cam in cam_names:
-                        cam_tracks: list[dict[str, Any]] = []
-                        for tr in per_cam_tracks[cam]:
-                            key = (cam, int(tr["local_id"]))
-                            view = views_by_key.get(key)
-                            embedding = []
-                            if view is not None:
-                                embedding = view.embedding.astype(np.float32, copy=False).reshape(-1).tolist()
-                            cam_tracks.append(
-                                {
-                                    "camera_id": cam,
-                                    "local_id": int(tr["local_id"]),
-                                    "global_id": int(tr["global_id"]),
-                                    "bbox_xyxy": [float(v) for v in tr["bbox_xyxy"]],
-                                    "score": float(tr["score"]),
-                                    "cls_id": int(tr["cls_id"]),
-                                    "cls_name": str(tr["cls_name"]),
-                                    "embedding": embedding,
-                                }
-                            )
-                        tracks_log[cam] = cam_tracks
-                    debug_payload = {
-                        "frame": frame_idx,
-                        "tracks": tracks_log,
-                        "association": assoc_debug,
-                    }
-                    debug_fp.write(json.dumps(debug_payload) + "\n")
+                if logger is not None:
+                    logger.flush(frame_idx, per_cam_tracks, views_by_cam, global_ids)
 
                 if write_video:
                     rendered: list[np.ndarray] = []
@@ -495,5 +457,5 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 cap.release()
             if writer is not None:
                 writer.release()
-            if debug_fp is not None:
-                debug_fp.close()
+            if logger is not None:
+                logger.close()
