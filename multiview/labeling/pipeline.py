@@ -10,6 +10,7 @@ import numpy as np
 from tqdm import tqdm
 
 from multiview.config import merge
+from multiview.dataset.layout import frame_name, subset_images, subset_labels
 from multiview.detector import YoloDetector, parse_kv_map
 from multiview.labeling.sam3_refiner import Sam3BoxRefiner, Sam3Config
 from multiview.utils.boxes import Det, area_xyxy, nms_xyxy, to_yolo_line
@@ -209,8 +210,8 @@ def _as_label_config(cfg: dict[str, Any]) -> LabelConfig:
 
 def _ensure_dataset_dirs(out_root: Path, save_viz: bool) -> None:
     for subset in ("train", "val", "test"):
-        (out_root / subset / "images").mkdir(parents=True, exist_ok=True)
-        (out_root / subset / "labels").mkdir(parents=True, exist_ok=True)
+        subset_images(out_root, subset).mkdir(parents=True, exist_ok=True)
+        subset_labels(out_root, subset).mkdir(parents=True, exist_ok=True)
         if save_viz:
             (out_root / "viz" / subset).mkdir(parents=True, exist_ok=True)
 
@@ -410,12 +411,12 @@ def label_videos(cfg: dict[str, Any]) -> None:
                     continue
 
                 for cam, item in per_cam.items():
-                    name = f"{group_name}_{cam}_f{frame_idx:06d}"
+                    name = frame_name(group_name, cam, frame_idx)
                     frame = item["frame"]
                     lines = item["lines"]
 
-                    img_out = out_root / subset / "images" / f"{name}.jpg"
-                    lbl_out = out_root / subset / "labels" / f"{name}.txt"
+                    img_out = subset_images(out_root, subset) / f"{name}.jpg"
+                    lbl_out = subset_labels(out_root, subset) / f"{name}.txt"
                     cv2.imwrite(str(img_out), frame)
                     lbl_out.write_text("\n".join(lines) + ("\n" if lines else ""))
                     total_images += 1
