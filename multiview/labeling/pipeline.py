@@ -12,6 +12,7 @@ from tqdm import tqdm
 from multiview.config import merge
 from multiview.dataset.layout import frame_name, subset_images, subset_labels
 from multiview.detector import YoloDetector, parse_kv_map
+from multiview.frames import iter_group_frames
 from multiview.labeling.sam3_refiner import Sam3BoxRefiner, Sam3Config
 from multiview.utils.boxes import Det, area_xyxy, nms_xyxy, to_yolo_line
 from multiview.utils.hash_split import stable_split
@@ -307,29 +308,6 @@ def label_videos(cfg: dict[str, Any]) -> None:
     total_images = 0
     total_labels = 0
 
-    def _iter_group_frames(caps: dict[str, cv2.VideoCapture], *, stride: int, max_frames: int) -> Any:
-        stride = max(1, int(stride))
-        kept = 0
-        raw_idx = -1
-        while True:
-            raw_idx += 1
-            frames: dict[str, np.ndarray] = {}
-            ok = True
-            for cam, cap in caps.items():
-                ret, frame = cap.read()
-                if not ret:
-                    ok = False
-                    break
-                frames[cam] = frame
-            if not ok:
-                break
-            if raw_idx % stride != 0:
-                continue
-            yield raw_idx, frames
-            kept += 1
-            if max_frames and kept >= max_frames:
-                break
-
     groups: dict[str, dict[str, str]]
     if c.groups:
         groups = c.groups
@@ -346,7 +324,12 @@ def label_videos(cfg: dict[str, Any]) -> None:
 
             warned_sam3_fallback = False
             pbar = tqdm(
-                _iter_group_frames(caps, stride=c.frame_stride, max_frames=c.max_frames_per_video),
+                iter_group_frames(
+                    caps,
+                    stride=c.frame_stride,
+                    max_frames=c.max_frames_per_video,
+                    align="naive",
+                ),
                 desc=f"Labeling {group_name}",
                 unit="frame",
             )

@@ -10,6 +10,7 @@ import numpy as np
 
 from multiview.config import merge
 from multiview.detector import YoloDetector, parse_kv_map
+from multiview.frames import iter_group_frames
 from multiview.tracking.global_association import GlobalIDAssigner, GlobalTrackView
 from multiview.tracking.simple_tracker import SimpleTracker
 from multiview.utils.video import VideoInfo, open_video
@@ -250,8 +251,6 @@ def run_multiview(cfg: dict[str, Any]) -> None:
     output_root = c.out_dir
     output_root.mkdir(parents=True, exist_ok=True)
 
-    frame_stride = c.frame_stride
-    max_frames_i = c.max_frames
     debug_assoc = c.debug_assoc
     debug_log_path = c.debug_log_path
     cameras_cfg = c.cameras
@@ -278,23 +277,6 @@ def run_multiview(cfg: dict[str, Any]) -> None:
             "fps": float(info.fps),
             "frame_count": int(info.frame_count),
         }
-
-    def _read_next(cap: cv2.VideoCapture) -> tuple[bool, np.ndarray | None, float]:
-        ret, frame = cap.read()
-        if not ret:
-            return False, None, 0.0
-        ts = float(cap.get(cv2.CAP_PROP_POS_MSEC) or 0.0)
-        return True, frame, ts
-
-    def _read_at_or_after(cap: cv2.VideoCapture, target_ts: float) -> tuple[bool, np.ndarray | None]:
-        ok, frame, ts = _read_next(cap)
-        if not ok:
-            return False, None
-        while ts < target_ts:
-            ok, frame, ts = _read_next(cap)
-            if not ok:
-                return False, None
-        return True, frame
 
     def _estimate_fps(path: Path, *, sample_frames: int = 10) -> float:
         cap = cv2.VideoCapture(str(path))
@@ -384,35 +366,14 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 debug_path.parent.mkdir(parents=True, exist_ok=True)
                 debug_fp = debug_path.open("w")
 
-            processed = 0
-            raw_idx = -1
-            while True:
-                ok, sync_frame, sync_ts = _read_next(caps[sync_cam])
-                if not ok or sync_frame is None:
-                    break
-                raw_idx += 1
-
-                if raw_idx % frame_stride != 0:
-                    continue
-
-                frames: dict[str, np.ndarray] = {sync_cam: sync_frame}
-                ok = True
-                for cam in cam_names:
-                    if cam == sync_cam:
-                        continue
-                    ret, frame = _read_at_or_after(caps[cam], sync_ts)
-                    if not ret or frame is None:
-                        ok = False
-                        break
-                    frames[cam] = frame
-                if not ok:
-                    break
-
-                processed += 1
-                if max_frames_i is not None and processed > max_frames_i:
-                    break
-
-                batch = [frames[c] for c in cam_names]
+            for raw_idx, frames in iter_group_frames(
+                caps,
+                stride=c.frame_stride,
+                max_frames=c.max_frames,
+                align="timestamp",
+                sync_cam=sync_cam,
+            ):
+                batch = [frames[cam] for cam in cam_names]
                 dets_batch = detector.predict_dets(
                     batch,
                     conf=c.conf,
@@ -455,7 +416,7 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                     per_cam_tracks[cam] = out_tracks
                     views_by_cam[cam] = views
 
-                frame_idx = processed - 1
+                frame_idx = raw_idx
                 assoc_debug = gid.assign_frame(frame_idx, views_by_cam, cam_order=cam_names, debug=debug_assoc)
 
                 for cam in cam_names:
