@@ -22,12 +22,19 @@ tracking = [
   "torch",
   "torchvision",
 ]
+dev = [
+  "pytest",
+]
 sam3 = [
   # SAM3 is not published on PyPI; install from source per docs.
 ]
 
 [project.scripts]
 multiview = "multiview.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.setuptools.packages.find]
 where = ["."]

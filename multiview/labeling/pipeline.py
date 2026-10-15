@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+from multiview.config import merge
 from multiview.labeling.proposals import YoloProposer, parse_kv_map
 from multiview.labeling.sam3_refiner import Sam3BoxRefiner, Sam3Config
 from multiview.utils.boxes import Det, area_xyxy, nms_xyxy, to_yolo_line
@@ -135,12 +136,7 @@ def _normalize_groups(raw: Any) -> dict[str, dict[str, str]]:
 
 
 def _as_label_config(cfg: dict[str, Any]) -> LabelConfig:
-    base = _default_cfg()
-    for k, v in cfg.items():
-        if isinstance(v, dict) and isinstance(base.get(k), dict):
-            base[k].update(v)
-        else:
-            base[k] = v
+    base = merge(_default_cfg(), cfg)
 
     raw_targets = base["targets"]
     if isinstance(raw_targets, list):

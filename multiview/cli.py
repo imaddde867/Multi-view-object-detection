@@ -3,11 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from multiview.config import merge
 from multiview.dataset.verify import verify_dataset
 from multiview.labeling.pipeline import label_videos
 from multiview.system.run import run_multiview
 from multiview.training.train import train_yolo
-from multiview.utils.yaml import load_yaml, merge_dicts
+from multiview.utils.yaml import load_yaml
 
 
 def _add_common_io_args(parser: argparse.ArgumentParser) -> None:

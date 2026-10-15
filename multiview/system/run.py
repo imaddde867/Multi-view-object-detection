@@ -108,12 +108,7 @@ def _draw_tracks(frame_bgr: np.ndarray, tracks: list[dict[str, Any]], class_name
 
 
 def run_multiview(cfg: dict[str, Any]) -> None:
-    base = _default_cfg()
-    for k, v in cfg.items():
-        if isinstance(v, dict) and isinstance(base.get(k), dict):
-            base[k].update(v)
-        else:
-            base[k] = v
+    base = merge(_default_cfg(), cfg)
 
     cameras_cfg = base.get("cameras", {})
     groups_cfg = base.get("groups", {})
