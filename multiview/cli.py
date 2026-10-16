@@ -139,7 +139,7 @@ def main() -> None:
             },
             "runtime": {"device": device or None, "half": args.half},
         }
-        cfg = merge_dicts(config, overrides)
+        cfg = merge(config, overrides)
         label_videos(cfg)
         return
 
@@ -166,7 +166,7 @@ def main() -> None:
             "workers": args.workers if args.workers >= 0 else None,
             "runtime": {"device": device or None, "half": args.half},
         }
-        cfg = merge_dicts(config, overrides)
+        cfg = merge(config, overrides)
         train_yolo(cfg)
         return
 
