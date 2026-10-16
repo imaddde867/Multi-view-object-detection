@@ -100,7 +100,12 @@ class YoloDetector:
         }
         if imgsz is not None:
             kwargs["imgsz"] = int(imgsz)
-        kwargs["max_det"] = max_det_i if max_det_i > 0 else None
+        # max_det <= 0 means "unset": omit the key so ultralytics applies its
+        # own default (300). Forwarding None is not a no-op: ultralytics
+        # validates typed config keys and raises TypeError on max_det=None
+        # (and ValueError on max_det=0, which must be >= 1).
+        if max_det_i > 0:
+            kwargs["max_det"] = max_det_i
         results = self.model.predict(list(frames_bgr), **kwargs)
         out: list[list[RawDet]] = []
         for r in results:

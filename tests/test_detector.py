@@ -100,7 +100,7 @@ class TestYoloDetector:
         assert seen == {"weights": "weights.pt", "device": "cpu", "half": True}
         assert det.names == {0: "person"}
 
-    def test_predict_passes_kwargs_and_zero_max_det_becomes_none(self, monkeypatch) -> None:
+    def test_predict_passes_kwargs_and_zero_max_det_omits_the_key(self, monkeypatch) -> None:
         monkeypatch.setattr("multiview.detector.load_yolo_model", lambda w, *, device="", half=False: (object(), {}))
         det = YoloDetector("w.pt")
         calls = {}
@@ -116,7 +116,9 @@ class TestYoloDetector:
         assert calls["frames"] is not None and len(calls["frames"]) == 2
         kw = calls["kwargs"]
         assert kw["conf"] == 0.3 and kw["iou"] == 0.6 and kw["imgsz"] == 640
-        assert kw["max_det"] is None  # 0 means "unset"
+        # 0 means "unset": the key must be absent, not None. ultralytics
+        # raises TypeError on max_det=None and ValueError on max_det=0.
+        assert "max_det" not in kw
         assert kw["verbose"] is False
     def test_predict_positive_max_det_passes_through(self, monkeypatch) -> None:
         monkeypatch.setattr("multiview.detector.load_yolo_model", lambda w, *, device="", half=False: (object(), {}))
