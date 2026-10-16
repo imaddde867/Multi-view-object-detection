@@ -327,9 +327,16 @@ def run_multiview(cfg: dict[str, Any]) -> None:
                 cam: SimpleTracker(embedder, max_age=c.max_age, match_threshold=c.match_threshold)
                 for cam in cam_names
             }
+            # Aging clocks must match. SimpleTracker ages once per processed
+            # frame (age += 1 per update), while the assigner ticks on raw video
+            # indices because that is the index we report in the outputs. Both
+            # max_age knobs are configured in processed frames, so the global
+            # window is scaled by the stride: un-scaled, a stride>1 run expires
+            # global ids stride-times sooner than the local tracks feeding them
+            # and the same object re-mints a new gid every few frames.
             gid = GlobalIDAssigner(
                 match_threshold=c.global_match_threshold,
-                max_age=c.global_max_age,
+                max_age=c.global_max_age * c.frame_stride,
                 spatial_weight=c.spatial_weight,
                 spatial_sigma=c.spatial_sigma,
                 spatial_max_dist=c.spatial_max_dist,
