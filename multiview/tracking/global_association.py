@@ -49,25 +49,35 @@ class GlobalIDAssigner:
         self.world_alpha = max(0.0, min(1.0, float(world_alpha)))
         self._next_gid = 1
         self._map: dict[tuple[str, int], int] = {}
+        # Per-camera-key clock: when a (cam, local_id) was last confirmed.
+        # Map entries must expire on their own clock, not only when their gid
+        # dies, or a camera that stopped reporting a track keeps its old gid
+        # alive for as long as another camera keeps that gid alive.
+        self._map_last_seen: dict[tuple[str, int], int] = {}
         self._global: dict[int, GlobalTrackState] = {}
 
     def get(self, cam: str, local_id: int) -> int | None:
         return self._map.get((cam, local_id))
 
-    def _unify(self, a: tuple[str, int], b: tuple[str, int]) -> int:
+    def _set_map(self, key: tuple[str, int], gid: int, frame_idx: int) -> None:
+        """Write a map entry and its clock together, so the two never drift."""
+        self._map[key] = gid
+        self._map_last_seen[key] = frame_idx
+
+    def _unify(self, a: tuple[str, int], b: tuple[str, int], frame_idx: int) -> int:
         ga = self._map.get(a)
         gb = self._map.get(b)
         if ga is None and gb is None:
             gid = self._next_gid
             self._next_gid += 1
-            self._map[a] = gid
-            self._map[b] = gid
+            self._set_map(a, gid, frame_idx)
+            self._set_map(b, gid, frame_idx)
             return gid
         if ga is None:
-            self._map[a] = gb
+            self._set_map(a, gb, frame_idx)
             return gb  # type: ignore[return-value]
         if gb is None:
-            self._map[b] = ga
+            self._set_map(b, ga, frame_idx)
             return ga
         if ga == gb:
             return ga
@@ -75,7 +85,7 @@ class GlobalIDAssigner:
         drop = max(ga, gb)
         for k, v in list(self._map.items()):
             if v == drop:
-                self._map[k] = keep
+                self._map[k] = keep  # re-point only: each key keeps its own expiry clock
         state_keep = self._global.get(keep)
         state_drop = self._global.get(drop)
         if state_drop is not None:
@@ -141,10 +151,12 @@ class GlobalIDAssigner:
                 sim = cosine_sim(view.embedding, state.embedding)
                 if not cls_match or sim < self.match_threshold:
                     self._map.pop(key, None)
+                    self._map_last_seen.pop(key, None)
                     unassigned_by_cam[cam].append(view)
                     continue
                 assigned_by_cam[cam].add(gid)
                 assigned_views_by_cam[cam].append(view)
+                self._map_last_seen[key] = frame_idx
                 self._update_state(gid, view, frame_idx)
 
         for anchor_idx, anchor_cam in enumerate(cam_order):
@@ -192,7 +204,7 @@ class GlobalIDAssigner:
                             reason = "conflict"
                         else:
                             merged = True
-                            self._unify((anchor_cam, a.local_id), (other_cam, b.local_id))
+                            self._unify((anchor_cam, a.local_id), (other_cam, b.local_id), frame_idx)
                             for gids in assigned_by_cam.values():
                                 if drop in gids:
                                     gids.discard(drop)
@@ -255,7 +267,7 @@ class GlobalIDAssigner:
                     continue
                 gid = state.global_id
                 key = (cam, view.local_id)
-                self._map[key] = gid
+                self._set_map(key, gid, frame_idx)
                 self._update_state(gid, view, frame_idx)
                 assigned_by_cam[cam].add(gid)
                 matched_rows.add(i)
@@ -327,11 +339,12 @@ class GlobalIDAssigner:
                     if gid is None or gid not in self._global:
                         gid = self._new_global(a, frame_idx)
                     else:
+                        self._map_last_seen[key_a] = frame_idx
                         self._update_state(gid, a, frame_idx)
                     assigned_by_cam[anchor_cam].add(gid)
 
                     key_b = (other_cam, b.local_id)
-                    self._map[key_b] = gid
+                    self._set_map(key_b, gid, frame_idx)
                     self._update_state(gid, b, frame_idx)
                     assigned_by_cam[other_cam].add(gid)
                     matched_other.add(j)
@@ -363,7 +376,7 @@ class GlobalIDAssigner:
         gid = self._next_gid
         self._next_gid += 1
         key = (view.cam, view.local_id)
-        self._map[key] = gid
+        self._set_map(key, gid, frame_idx)
         self._global[gid] = GlobalTrackState(
             global_id=gid,
             cls_id=view.cls_id,
@@ -422,12 +435,13 @@ class GlobalIDAssigner:
         stale_gids = [gid for gid, st in self._global.items() if frame_idx - st.last_seen > self.max_age]
         for gid in stale_gids:
             self._global.pop(gid, None)
-        # Map entries expire with their gid. shortcut: a key whose gid lives
-        # on (still seen via another camera) lingers until the gid dies —
-        # bounded by live gids x their historical camera keys.
+        # A (cam, local_id) key expires on either clock: its own age since it
+        # was last confirmed, or the death of the gid it points at.
         for key, gid in list(self._map.items()):
-            if gid not in self._global:
+            last_seen = self._map_last_seen.get(key, -1)
+            if gid not in self._global or frame_idx - last_seen > self.max_age:
                 self._map.pop(key, None)
+                self._map_last_seen.pop(key, None)
 
     def _build_cost(
         self,

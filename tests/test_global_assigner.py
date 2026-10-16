@@ -113,8 +113,27 @@ class TestRecorderSeam:
 
     def test_ensure_and_ensure_view_are_gone(self) -> None:
         # The fallback protocol that could mint state-less gids is deleted,
-        # not deprecated: there is no second way in.
+        # not deprecated: there is no second way in. (Per-key expiration
+        # bookkeeping on the assigner is not a fallback: it never mints ids.)
         a = _assigner()
         assert not hasattr(a, "ensure")
         assert not hasattr(a, "ensure_view")
-        assert not hasattr(a, "_map_last_seen")
+
+    def test_camera_key_expires_on_its_own_clock(self) -> None:
+        # A (cam, local_id) mapping must not outlive max_age just because
+        # another camera keeps the shared gid alive.
+        a = _assigner(max_age=3)
+        first = a.assign_frame(0, {"cam1": [view("cam1", 1)], "cam2": [view("cam2", 1)]})
+        assert first[("cam1", 1)] == first[("cam2", 1)]
+        for frame_idx in range(1, 7):
+            a.assign_frame(frame_idx, {"cam1": [], "cam2": [view("cam2", 1)]})
+        assert a.get("cam1", 1) is None
+        assert a.get("cam2", 1) is not None
+
+    def test_camera_key_survives_while_confirmed(self) -> None:
+        a = _assigner(max_age=3)
+        first = a.assign_frame(0, {"cam1": [view("cam1", 1)], "cam2": [view("cam2", 1)]})
+        for frame_idx in range(1, 12):
+            a.assign_frame(frame_idx, {"cam1": [view("cam1", 1)], "cam2": [view("cam2", 1)]})
+        assert a.get("cam1", 1) == first[("cam1", 1)]
+        assert a.get("cam2", 1) == first[("cam1", 1)]
