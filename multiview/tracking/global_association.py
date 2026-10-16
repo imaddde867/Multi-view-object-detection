@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 import numpy as np
@@ -25,7 +25,6 @@ class GlobalTrackState:
     cls_id: int
     embedding: np.ndarray
     last_seen: int
-    bboxes: dict[str, tuple[float, float, float, float]] = field(default_factory=dict)
     world_xy: tuple[float, float] | None = None
 
 
@@ -50,44 +49,35 @@ class GlobalIDAssigner:
         self.world_alpha = max(0.0, min(1.0, float(world_alpha)))
         self._next_gid = 1
         self._map: dict[tuple[str, int], int] = {}
+        # Per-camera-key clock: when a (cam, local_id) was last confirmed.
+        # Map entries must expire on their own clock, not only when their gid
+        # dies, or a camera that stopped reporting a track keeps its old gid
+        # alive for as long as another camera keeps that gid alive.
         self._map_last_seen: dict[tuple[str, int], int] = {}
         self._global: dict[int, GlobalTrackState] = {}
 
     def get(self, cam: str, local_id: int) -> int | None:
         return self._map.get((cam, local_id))
 
-    def ensure(self, cam: str, local_id: int) -> int:
-        key = (cam, local_id)
-        gid = self._map.get(key)
-        if gid is None:
-            gid = self._next_gid
-            self._next_gid += 1
-            self._map[key] = gid
-        return gid
-
-    def ensure_view(self, view: GlobalTrackView, frame_idx: int) -> int:
-        key = (view.cam, view.local_id)
-        gid = self._map.get(key)
-        if gid is None or gid not in self._global:
-            return self._new_global(view, frame_idx)
+    def _set_map(self, key: tuple[str, int], gid: int, frame_idx: int) -> None:
+        """Write a map entry and its clock together, so the two never drift."""
+        self._map[key] = gid
         self._map_last_seen[key] = frame_idx
-        self._update_state(gid, view, frame_idx)
-        return gid
 
-    def unify(self, a: tuple[str, int], b: tuple[str, int]) -> int:
+    def _unify(self, a: tuple[str, int], b: tuple[str, int], frame_idx: int) -> int:
         ga = self._map.get(a)
         gb = self._map.get(b)
         if ga is None and gb is None:
             gid = self._next_gid
             self._next_gid += 1
-            self._map[a] = gid
-            self._map[b] = gid
+            self._set_map(a, gid, frame_idx)
+            self._set_map(b, gid, frame_idx)
             return gid
         if ga is None:
-            self._map[a] = gb
+            self._set_map(a, gb, frame_idx)
             return gb  # type: ignore[return-value]
         if gb is None:
-            self._map[b] = ga
+            self._set_map(b, ga, frame_idx)
             return ga
         if ga == gb:
             return ga
@@ -95,7 +85,7 @@ class GlobalIDAssigner:
         drop = max(ga, gb)
         for k, v in list(self._map.items()):
             if v == drop:
-                self._map[k] = keep
+                self._map[k] = keep  # re-point only: each key keeps its own expiry clock
         state_keep = self._global.get(keep)
         state_drop = self._global.get(drop)
         if state_drop is not None:
@@ -110,7 +100,6 @@ class GlobalIDAssigner:
                         state_keep.world_xy = state_drop.world_xy
                 elif state_keep.world_xy is None and state_drop.world_xy is not None:
                     state_keep.world_xy = state_drop.world_xy
-                state_keep.bboxes.update(state_drop.bboxes)
             self._global.pop(drop, None)
         return keep
 
@@ -120,14 +109,25 @@ class GlobalIDAssigner:
         views_by_cam: dict[str, list[GlobalTrackView]],
         *,
         cam_order: list[str] | None = None,
-        debug: bool = False,
-    ) -> dict[str, Any] | None:
+        recorder: Any | None = None,
+    ) -> dict[tuple[str, int], int]:
+        """Assign global ids to one frame of views across cameras.
+
+        Returns the mapping (cam, local_id) -> global_id for every view
+        given — the caller never guesses ids or falls back. When a recorder
+        is supplied it receives the association debug payload (same keys as
+        the documented JSONL log) for this frame.
+        """
         self._prune(frame_idx)
         if cam_order is None:
             cam_order = list(views_by_cam.keys())
+        else:
+            # Every given view must come back with an id, even if the caller
+            # only ordered a subset of the cameras (extra cameras join last).
+            cam_order = list(cam_order) + [c for c in views_by_cam if c not in cam_order]
 
         debug_info: dict[str, Any] | None = None
-        if debug:
+        if recorder is not None:
             debug_info = {
                 "frame": int(frame_idx),
                 "threshold": float(self.match_threshold),
@@ -204,7 +204,7 @@ class GlobalIDAssigner:
                             reason = "conflict"
                         else:
                             merged = True
-                            self.unify((anchor_cam, a.local_id), (other_cam, b.local_id))
+                            self._unify((anchor_cam, a.local_id), (other_cam, b.local_id), frame_idx)
                             for gids in assigned_by_cam.values():
                                 if drop in gids:
                                     gids.discard(drop)
@@ -267,8 +267,7 @@ class GlobalIDAssigner:
                     continue
                 gid = state.global_id
                 key = (cam, view.local_id)
-                self._map[key] = gid
-                self._map_last_seen[key] = frame_idx
+                self._set_map(key, gid, frame_idx)
                 self._update_state(gid, view, frame_idx)
                 assigned_by_cam[cam].add(gid)
                 matched_rows.add(i)
@@ -345,8 +344,7 @@ class GlobalIDAssigner:
                     assigned_by_cam[anchor_cam].add(gid)
 
                     key_b = (other_cam, b.local_id)
-                    self._map[key_b] = gid
-                    self._map_last_seen[key_b] = frame_idx
+                    self._set_map(key_b, gid, frame_idx)
                     self._update_state(gid, b, frame_idx)
                     assigned_by_cam[other_cam].add(gid)
                     matched_other.add(j)
@@ -363,20 +361,27 @@ class GlobalIDAssigner:
                 gid = self._new_global(view, frame_idx)
                 assigned_by_cam[cam].add(gid)
 
-        return debug_info
+        global_ids: dict[tuple[str, int], int] = {}
+        for cam in cam_order:
+            for view in views_by_cam.get(cam, []):
+                gid = self._map.get((cam, view.local_id))
+                if gid is not None and gid in self._global:
+                    global_ids[(cam, view.local_id)] = gid
+
+        if recorder is not None and debug_info is not None:
+            recorder.record(frame_idx, views_by_cam, debug_info)
+        return global_ids
 
     def _new_global(self, view: GlobalTrackView, frame_idx: int) -> int:
         gid = self._next_gid
         self._next_gid += 1
         key = (view.cam, view.local_id)
-        self._map[key] = gid
-        self._map_last_seen[key] = frame_idx
+        self._set_map(key, gid, frame_idx)
         self._global[gid] = GlobalTrackState(
             global_id=gid,
             cls_id=view.cls_id,
             embedding=view.embedding.copy(),
             last_seen=frame_idx,
-            bboxes={view.cam: view.xyxy},
             world_xy=view.world_xy,
         )
         return gid
@@ -389,14 +394,12 @@ class GlobalIDAssigner:
                 cls_id=view.cls_id,
                 embedding=view.embedding.copy(),
                 last_seen=frame_idx,
-                bboxes={view.cam: view.xyxy},
                 world_xy=view.world_xy,
             )
             return
         state.cls_id = view.cls_id
         state.embedding = self._blend_embedding(state.embedding, view.embedding)
         state.last_seen = frame_idx
-        state.bboxes[view.cam] = view.xyxy
         if view.world_xy is not None:
             state.world_xy = self._blend_world(state.world_xy, view.world_xy)
 
@@ -432,12 +435,11 @@ class GlobalIDAssigner:
         stale_gids = [gid for gid, st in self._global.items() if frame_idx - st.last_seen > self.max_age]
         for gid in stale_gids:
             self._global.pop(gid, None)
-        for key, last_seen in list(self._map_last_seen.items()):
-            gid = self._map.get(key)
-            if gid is None:
-                self._map_last_seen.pop(key, None)
-                continue
-            if frame_idx - last_seen > self.max_age or gid not in self._global:
+        # A (cam, local_id) key expires on either clock: its own age since it
+        # was last confirmed, or the death of the gid it points at.
+        for key, gid in list(self._map.items()):
+            last_seen = self._map_last_seen.get(key, -1)
+            if gid not in self._global or frame_idx - last_seen > self.max_age:
                 self._map.pop(key, None)
                 self._map_last_seen.pop(key, None)
 

@@ -63,7 +63,7 @@ Optional:
 - `results/showcase/` curated artifacts for demos.
 - `runs/` MLflow runs.
 - `sam3/` SAM3 source (editable install for labeling).
-- `scripts/` debugging utilities.
+- `tests/` pytest suite (pins the shared modules: config, detector, frames, dataset layout, global assignment).
 - `slurm/` Puhti job scripts.
 
 ## Pipeline
@@ -132,10 +132,10 @@ debug:
 
 The JSONL log includes per-frame local/global IDs, embeddings, cost matrices, and accept/reject decisions. Video overlays now show `G<global_id> L<local_id>` to verify failures quickly.
 
-Optional synthetic sanity check:
+Optional synthetic sanity check (no videos or weights needed):
 
 ```bash
-python scripts/debug_global_association.py
+python -m pytest tests/test_global_assigner.py tests/test_assoc_log.py -q
 ```
 
 ## Showcase (tracked)

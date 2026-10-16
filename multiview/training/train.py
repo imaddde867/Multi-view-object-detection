@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from multiview.config import merge
 from multiview.utils.yolo import ensure_weights
 
 
@@ -39,12 +40,7 @@ def _default_cfg() -> dict[str, Any]:
 
 
 def _as_train_config(cfg: dict[str, Any]) -> TrainConfig:
-    base = _default_cfg()
-    for k, v in cfg.items():
-        if isinstance(v, dict) and isinstance(base.get(k), dict):
-            base[k].update(v)
-        else:
-            base[k] = v
+    base = merge(_default_cfg(), cfg)
 
     runtime = base["runtime"]
     return TrainConfig(

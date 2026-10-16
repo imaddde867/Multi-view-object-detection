@@ -9,7 +9,10 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
-from multiview.labeling.proposals import YoloProposer, parse_kv_map
+from multiview.config import merge
+from multiview.dataset.layout import frame_name, subset_images, subset_labels
+from multiview.detector import YoloDetector, parse_kv_map
+from multiview.frames import iter_group_frames
 from multiview.labeling.sam3_refiner import Sam3BoxRefiner, Sam3Config
 from multiview.utils.boxes import Det, area_xyxy, nms_xyxy, to_yolo_line
 from multiview.utils.hash_split import stable_split
@@ -135,12 +138,7 @@ def _normalize_groups(raw: Any) -> dict[str, dict[str, str]]:
 
 
 def _as_label_config(cfg: dict[str, Any]) -> LabelConfig:
-    base = _default_cfg()
-    for k, v in cfg.items():
-        if isinstance(v, dict) and isinstance(base.get(k), dict):
-            base[k].update(v)
-        else:
-            base[k] = v
+    base = merge(_default_cfg(), cfg)
 
     raw_targets = base["targets"]
     if isinstance(raw_targets, list):
@@ -213,8 +211,8 @@ def _as_label_config(cfg: dict[str, Any]) -> LabelConfig:
 
 def _ensure_dataset_dirs(out_root: Path, save_viz: bool) -> None:
     for subset in ("train", "val", "test"):
-        (out_root / subset / "images").mkdir(parents=True, exist_ok=True)
-        (out_root / subset / "labels").mkdir(parents=True, exist_ok=True)
+        subset_images(out_root, subset).mkdir(parents=True, exist_ok=True)
+        subset_labels(out_root, subset).mkdir(parents=True, exist_ok=True)
         if save_viz:
             (out_root / "viz" / subset).mkdir(parents=True, exist_ok=True)
 
@@ -270,7 +268,7 @@ def label_videos(cfg: dict[str, Any]) -> None:
     target_to_id = {name: i for i, name in enumerate(c.targets)}
     source_map = parse_kv_map(c.source_map)
 
-    proposer = YoloProposer(c.proposal_model, device=c.runtime_device, half=c.runtime_half)
+    detector = YoloDetector(c.proposal_model, device=c.runtime_device, half=c.runtime_half)
     sam3 = Sam3BoxRefiner(
         Sam3Config(
             checkpoint=c.sam3_checkpoint,
@@ -310,29 +308,6 @@ def label_videos(cfg: dict[str, Any]) -> None:
     total_images = 0
     total_labels = 0
 
-    def _iter_group_frames(caps: dict[str, cv2.VideoCapture], *, stride: int, max_frames: int) -> Any:
-        stride = max(1, int(stride))
-        kept = 0
-        raw_idx = -1
-        while True:
-            raw_idx += 1
-            frames: dict[str, np.ndarray] = {}
-            ok = True
-            for cam, cap in caps.items():
-                ret, frame = cap.read()
-                if not ret:
-                    ok = False
-                    break
-                frames[cam] = frame
-            if not ok:
-                break
-            if raw_idx % stride != 0:
-                continue
-            yield raw_idx, frames
-            kept += 1
-            if max_frames and kept >= max_frames:
-                break
-
     groups: dict[str, dict[str, str]]
     if c.groups:
         groups = c.groups
@@ -349,7 +324,12 @@ def label_videos(cfg: dict[str, Any]) -> None:
 
             warned_sam3_fallback = False
             pbar = tqdm(
-                _iter_group_frames(caps, stride=c.frame_stride, max_frames=c.max_frames_per_video),
+                iter_group_frames(
+                    caps,
+                    stride=c.frame_stride,
+                    max_frames=c.max_frames_per_video,
+                    align="naive",
+                ),
                 desc=f"Labeling {group_name}",
                 unit="frame",
             )
@@ -363,19 +343,19 @@ def label_videos(cfg: dict[str, Any]) -> None:
                 for cam, frame in frames.items():
                     h, w = frame.shape[:2]
 
-                    proposals = proposer.propose(
-                        frame,
+                    prop_dets = detector.predict_dets(
+                        [frame],
                         conf=c.conf,
                         iou=c.iou,
-                        target_to_id=target_to_id,
                         source_map=source_map,
-                        min_box_area=c.min_box_area,
+                        target_to_id=target_to_id,
                         imgsz=c.proposal_imgsz if c.proposal_imgsz > 0 else None,
-                    )
+                    )[0]
+                    prop_dets = [d for d in prop_dets if area_xyxy(d.xyxy) >= float(c.min_box_area)]
 
                     dets: list[Det] = []
-                    proposal_boxes = [p.det.xyxy for p in proposals]
-                    prompts = [p.tgt_name for p in proposals]
+                    proposal_boxes = [d.xyxy for d in prop_dets]
+                    prompts = [c.targets[d.cls_id] for d in prop_dets]
                     refined = proposal_boxes
                     if proposal_boxes:
                         try:
@@ -386,10 +366,10 @@ def label_videos(cfg: dict[str, Any]) -> None:
                                 warned_sam3_fallback = True
                             refined = proposal_boxes
 
-                    for p, xyxy in zip(proposals, refined):
+                    for d, xyxy in zip(prop_dets, refined):
                         if area_xyxy(xyxy) < float(c.min_box_area):
                             continue
-                        dets.append(Det(xyxy=xyxy, cls_id=p.det.cls_id, score=p.det.score))
+                        dets.append(Det(xyxy=xyxy, cls_id=d.cls_id, score=d.score))
 
                     if c.sam3_nms_iou > 0 and dets:
                         by_cls: dict[int, list[Det]] = {}
@@ -408,25 +388,25 @@ def label_videos(cfg: dict[str, Any]) -> None:
                     if lines:
                         any_labels = True
 
-                    per_cam[cam] = {"frame": frame, "proposals": proposals, "dets": dets, "lines": lines}
+                    per_cam[cam] = {"frame": frame, "proposal_dets": prop_dets, "dets": dets, "lines": lines}
 
                 if not any_labels and not c.keep_empty:
                     continue
 
                 for cam, item in per_cam.items():
-                    name = f"{group_name}_{cam}_f{frame_idx:06d}"
+                    name = frame_name(group_name, cam, frame_idx)
                     frame = item["frame"]
                     lines = item["lines"]
 
-                    img_out = out_root / subset / "images" / f"{name}.jpg"
-                    lbl_out = out_root / subset / "labels" / f"{name}.txt"
+                    img_out = subset_images(out_root, subset) / f"{name}.jpg"
+                    lbl_out = subset_labels(out_root, subset) / f"{name}.txt"
                     cv2.imwrite(str(img_out), frame)
                     lbl_out.write_text("\n".join(lines) + ("\n" if lines else ""))
                     total_images += 1
                     total_labels += len(lines)
 
                     if c.save_viz:
-                        proposal_dets = [p.det for p in item["proposals"]]
+                        proposal_dets = item["proposal_dets"]
                         viz = _draw_viz_overlay(frame, proposal_dets=proposal_dets, refined_dets=item["dets"], names=c.targets)
                         viz_out = out_root / "viz" / subset / f"{name}.jpg"
                         cv2.imwrite(str(viz_out), viz)

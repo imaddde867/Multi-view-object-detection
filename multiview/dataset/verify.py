@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from multiview.dataset.layout import frame_prefix, sibling_labels, split_frame_name
 from multiview.utils.yaml import load_yaml
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
@@ -116,7 +117,7 @@ def verify_dataset(
         if not images_dir.exists():
             err(f"Missing {subset} images dir: {images_dir}")
             continue
-        labels_dir = images_dir.parent / "labels"
+        labels_dir = sibling_labels(images_dir)
         if not labels_dir.exists():
             err(f"Missing {subset} labels dir: {labels_dir}")
             continue
@@ -179,7 +180,7 @@ def verify_dataset(
                     cams = [str(c) for c in cams_obj.keys()]
                     expected_cams[str(group_name)] = set(cams)
                     for cam in cams:
-                        prefix = f"{group_name}_{cam}_f"
+                        prefix = frame_prefix(group_name, cam)
                         if prefix in prefix_to_group_cam:
                             err(f"Duplicate prefix '{prefix}' in groups; choose unique group/cam names.")
                         prefix_to_group_cam[prefix] = (str(group_name), cam)
@@ -194,10 +195,7 @@ def verify_dataset(
                     images_dir = (root / str(images_rel)).resolve()
                     for img in _iter_images(images_dir):
                         stem = img.stem
-                        if "_f" not in stem:
-                            continue
-                        left, idx_str = stem.rsplit("_f", 1)
-                        prefix = f"{left}_f"
+                        prefix, idx_str = split_frame_name(stem)
                         hit = prefix_to_group_cam.get(prefix)
                         if hit is None:
                             continue
