@@ -217,7 +217,11 @@ class RunConfig:
             embedder_type=embedder_type,
             embedder_bins=int(embedder_cfg.get("bins", 16)),
             embedder_device=embedder_device,
-            frame_stride=int(run_cfg.get("frame_stride", 1) or 1),
+            # Clamped here, not only inside iter_group_frames: the run seam
+            # scales the global aging window by the stride, so a negative
+            # value would hand the assigner a negative max_age, which
+            # disables pruning entirely while every frame still gets read.
+            frame_stride=max(1, int(run_cfg.get("frame_stride", 1) or 1)),
             max_frames=_as_optional_int(run_cfg.get("max_frames")),
             run_groups=[str(g) for g in run_cfg.get("groups", [])],
             out_dir=Path(str(out_cfg.get("dir", "results/system"))),

@@ -71,6 +71,18 @@ class TestRunConfigCoercions:
         cfg["run"]["max_frames"] = 12
         assert RunConfig.from_config(cfg).max_frames == 12
 
+    @pytest.mark.parametrize("stride", [0, -1, -5])
+    def test_frame_stride_is_normalized(self, stride) -> None:
+        # iter_group_frames clamps the stride, but the run seam scales the
+        # global aging window by it. An unclamped negative gave the assigner a
+        # negative max_age, which turns pruning off for the whole run while
+        # every frame still gets read.
+        cfg = _minimal_cfg()
+        cfg.setdefault("run", {})["frame_stride"] = stride
+        c = RunConfig.from_config(cfg)
+        assert c.frame_stride == 1
+        assert c.global_max_age * c.frame_stride > 0
+
     def test_bool_coercion_unlike_builtin_bool(self) -> None:
         # bool("false") is True in Python; YAML strings must not hit that trap
         cfg = _minimal_cfg()
