@@ -31,6 +31,7 @@ def iter_group_frames(
     # validate eagerly: a generator body would not run until first next()
     if align not in ("naive", "timestamp"):
         raise ValueError(f"Unknown align policy: {align!r} (expected 'naive' or 'timestamp')")
+    stride = max(1, int(stride or 1))
     return _iter_group_frames(caps, stride=stride, max_frames=max_frames, align=align, sync_cam=sync_cam)
 
 

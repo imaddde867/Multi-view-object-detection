@@ -111,6 +111,10 @@ class GlobalIDAssigner:
         self._prune(frame_idx)
         if cam_order is None:
             cam_order = list(views_by_cam.keys())
+        else:
+            # Every given view must come back with an id, even if the caller
+            # only ordered a subset of the cameras (extra cameras join last).
+            cam_order = list(cam_order) + [c for c in views_by_cam if c not in cam_order]
 
         debug_info: dict[str, Any] | None = None
         if recorder is not None:

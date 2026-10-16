@@ -39,6 +39,21 @@ class TestFramesErrorsAndFallbacks:
         with pytest.raises(ValueError, match="Unknown align"):
             iter_group_frames({}, align="bogus")
 
+    def test_zero_stride_behaves_as_one(self) -> None:
+        # the old label loop clamped stride with max(1, ...); keep that
+        class FakeCap:
+            def __init__(self, script):
+                self.script = list(script)
+
+            def read(self):
+                if not self.script:
+                    return False, None
+                return True, self.script.pop(0)
+
+        caps = {"cam1": FakeCap(["a0", "a1"])}
+        out = list(iter_group_frames(caps, align="naive", stride=0))
+        assert [idx for idx, _ in out] == [0, 1]
+
     def test_timestamp_falls_back_to_first_cam(self) -> None:
         class FakeCap:
             def __init__(self, script):
@@ -103,8 +118,18 @@ class TestAssignerClassChange:
         changed = a.assign_frame(1, {"cam1": [_view("cam1", 1, cls=1)]})
         assert changed[("cam1", 1)] == 2
 
-    def test_cam_order_drives_anchor_choice(self) -> None:
-        # with cam_order [cam2, cam1], cam2 is the anchor that mints the gid;
+    def test_explicit_partial_cam_order_still_returns_every_view(self) -> None:
+        # Regression: phases and the final mapping loop only over cam_order,
+        # so an omitted camera used to vanish from the result entirely.
+        a = GlobalIDAssigner(match_threshold=0.75, max_age=30)
+        mapping = a.assign_frame(
+            0,
+            {"cam1": [_view("cam1", 1)], "cam2": [_view("cam2", 5, emb=(0.0, 1.0))]},
+            cam_order=["cam1"],
+        )
+        assert set(mapping) == {("cam1", 1), ("cam2", 5)}
+
+    def test_cam_order_drives_anchor_choice(self) -> None:        # with cam_order [cam2, cam1], cam2 is the anchor that mints the gid;
         # the recorder's merge step names anchor/other in iteration order.
         class Rec:
             def __init__(self):
